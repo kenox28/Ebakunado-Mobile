@@ -7,6 +7,10 @@ import 'providers/dashboard_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'screens/login_screen.dart';
+import 'screens/create_account_screen.dart';
+import 'screens/forgot_password_request_screen.dart';
+import 'screens/forgot_password_verify_screen.dart';
+import 'screens/forgot_password_reset_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/debug_screen.dart';
 import 'screens/child_record_screen.dart';
@@ -16,6 +20,7 @@ import 'screens/add_child_screen.dart';
 import 'screens/chr_requests_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/notification_test_screen.dart';
+import 'screens/immunization_approvals_screen.dart';
 import 'utils/constants.dart';
 import 'services/notification_service.dart';
 
@@ -61,6 +66,23 @@ class MyApp extends StatelessWidget {
           switch (settings.name) {
             case AppConstants.loginRoute:
               return MaterialPageRoute(builder: (_) => const LoginScreen());
+            case AppConstants.createAccountRoute:
+              return MaterialPageRoute(
+                builder: (_) => const CreateAccountScreen(),
+              );
+            case AppConstants.forgotPasswordRequestRoute:
+              return MaterialPageRoute(
+                builder: (_) => const ForgotPasswordRequestScreen(),
+              );
+            case AppConstants.forgotPasswordVerifyRoute:
+              return MaterialPageRoute(
+                builder: (_) => const ForgotPasswordVerifyScreen(),
+                settings: settings, // Pass settings to access arguments
+              );
+            case AppConstants.forgotPasswordResetRoute:
+              return MaterialPageRoute(
+                builder: (_) => const ForgotPasswordResetScreen(),
+              );
             case AppConstants.homeRoute:
               return MaterialPageRoute(builder: (_) => const HomeScreen());
             case AppConstants.childRecordRoute:
@@ -100,8 +122,11 @@ class MyApp extends StatelessWidget {
               return MaterialPageRoute(builder: (_) => const SettingsScreen());
             case AppConstants.approvedRequestsRoute:
               return MaterialPageRoute(
-                builder: (_) =>
-                    const PlaceholderScreen(title: 'Approved Requests'),
+                builder: (_) => const ChrRequestsScreen(),
+              );
+            case AppConstants.immunizationApprovalsRoute:
+              return MaterialPageRoute(
+                builder: (_) => const ImmunizationApprovalsScreen(),
               );
             case '/debug':
               return MaterialPageRoute(builder: (_) => const DebugScreen());

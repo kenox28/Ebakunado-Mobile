@@ -1,9 +1,37 @@
+class ClosestMissed {
+  final String vaccineName;
+  final String doseNumber;
+  final String? scheduleDate;
+  final String? catchUpDate;
+  final String status;
+
+  ClosestMissed({
+    required this.vaccineName,
+    required this.doseNumber,
+    this.scheduleDate,
+    this.catchUpDate,
+    required this.status,
+  });
+
+  factory ClosestMissed.fromJson(Map<String, dynamic> json) {
+    return ClosestMissed(
+      vaccineName: json['vaccine_name'] ?? '',
+      doseNumber: json['dose_number']?.toString() ?? '',
+      scheduleDate: json['schedule_date'],
+      catchUpDate: json['catch_up_date'],
+      status: json['status'] ?? '',
+    );
+  }
+}
+
 class ChildSummaryItem {
   final String babyId;
   final String name;
   final String? upcomingDate;
   final String? upcomingVaccine;
   final int missedCount;
+  final ClosestMissed? closestMissed;
+  final String? qrCode;
 
   ChildSummaryItem({
     required this.babyId,
@@ -11,6 +39,8 @@ class ChildSummaryItem {
     this.upcomingDate,
     this.upcomingVaccine,
     required this.missedCount,
+    this.closestMissed,
+    this.qrCode,
   });
 
   factory ChildSummaryItem.fromJson(Map<String, dynamic> json) {
@@ -20,6 +50,10 @@ class ChildSummaryItem {
       upcomingDate: json['upcoming_date'],
       upcomingVaccine: json['upcoming_vaccine'],
       missedCount: json['missed_count'] ?? 0,
+      closestMissed: json['closest_missed'] != null
+          ? ClosestMissed.fromJson(json['closest_missed'])
+          : null,
+      qrCode: json['qr_code'],
     );
   }
 }

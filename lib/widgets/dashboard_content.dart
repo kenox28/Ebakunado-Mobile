@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../utils/constants.dart';
 import '../models/child.dart';
+import 'qr_code_modal.dart';
 
 class DashboardContent extends StatelessWidget {
   const DashboardContent({super.key});
@@ -237,11 +238,56 @@ class DashboardContent extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    child.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          child.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      // QR Code Icon Button
+                                      if (child.qrCode != null &&
+                                          child.qrCode!.isNotEmpty)
+                                        IconButton(
+                                          icon: const Icon(Icons.qr_code_2),
+                                          color: AppConstants.primaryGreen,
+                                          iconSize: 24,
+                                          onPressed: () {
+                                            showDialog(
+                                              context: context,
+                                              builder: (context) => QrCodeModal(
+                                                childName: child.name,
+                                                qrCodeUrl: child.qrCode!,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      if (child.missedCount > 0 &&
+                                          provider.selectedFilter == 'missed')
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppConstants.warningOrange,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Missed: ${child.missedCount}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                   const SizedBox(height: 4),
                                   if (child.upcomingVaccine != null)
@@ -254,14 +300,71 @@ class DashboardContent extends StatelessWidget {
                                       'Date: ${_formatDate(child.upcomingDate)}',
                                       style: const TextStyle(fontSize: 13),
                                     ),
-                                  if (child.missedCount > 0)
-                                    Text(
-                                      'Missed: ${child.missedCount}',
-                                      style: const TextStyle(
-                                        color: AppConstants.errorRed,
-                                        fontSize: 13,
+                                  // Display missed vaccination details when filter is 'missed'
+                                  if (provider.selectedFilter == 'missed' &&
+                                      child.closestMissed != null) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[100],
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppConstants.errorRed
+                                              .withOpacity(0.3),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${child.closestMissed!.vaccineName} (Dose ${child.closestMissed!.doseNumber})',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          if (child
+                                                  .closestMissed!
+                                                  .scheduleDate !=
+                                              null)
+                                            Text(
+                                              'Scheduled: ${_formatDate(child.closestMissed!.scheduleDate)}',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          if (child
+                                                  .closestMissed!
+                                                  .catchUpDate !=
+                                              null) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Catch Up: ${_formatDate(child.closestMissed!.catchUpDate)}',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: AppConstants.errorRed,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ),
+                                    if (child.missedCount > 1) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '...and ${child.missedCount - 1} more missed vaccination${child.missedCount - 1 > 1 ? 's' : ''}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ],
                               ),
                             ),

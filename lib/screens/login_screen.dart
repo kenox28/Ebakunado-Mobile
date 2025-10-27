@@ -195,11 +195,9 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
                   const SizedBox(height: 24),
                   TextButton(
                     onPressed: () {
-                      // TODO: Implement create account
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Create account feature coming soon'),
-                        ),
+                      Navigator.pushNamed(
+                        context,
+                        AppConstants.createAccountRoute,
                       );
                     },
                     child: Text(
@@ -210,11 +208,9 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
                   // Forgot Password
                   TextButton(
                     onPressed: () {
-                      // TODO: Implement forgot password
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Forgot password feature coming soon'),
-                        ),
+                      Navigator.pushNamed(
+                        context,
+                        AppConstants.forgotPasswordRequestRoute,
                       );
                     },
                     child: Text(

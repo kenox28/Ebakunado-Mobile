@@ -27,7 +27,7 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadSchedule();
   }
 
@@ -132,8 +132,12 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
                 unselectedLabelColor: Colors.white70,
                 tabs: [
                   Tab(
-                    text: 'Upcoming (${_getUpcomingCount()})',
+                    text: 'Schedule (${_getUpcomingCount()})',
                     icon: const Icon(Icons.schedule),
+                  ),
+                  Tab(
+                    text: 'Missed (${_getMissedCount()})',
+                    icon: const Icon(Icons.warning_rounded),
                   ),
                   Tab(
                     text: 'Taken (${_getTakenCount()})',
@@ -181,17 +185,17 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
       onRefresh: _loadSchedule,
       child: TabBarView(
         controller: _tabController,
-        children: [_buildUpcomingTab(), _buildTakenTab()],
+        children: [_buildScheduleTab(), _buildMissedTab(), _buildTakenTab()],
       ),
     );
   }
 
-  Widget _buildUpcomingTab() {
+  Widget _buildScheduleTab() {
     final upcomingItems = _scheduleResponse!.getUpcomingForBaby(widget.babyId);
 
     if (upcomingItems.isEmpty) {
       return _buildEmptyState(
-        'No upcoming immunizations',
+        'No scheduled immunizations',
         'All scheduled immunizations are up to date.',
         Icons.check_circle_outline,
       );
@@ -203,6 +207,27 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
       itemBuilder: (context, index) {
         final item = upcomingItems[index];
         return _buildScheduleCard(item, isUpcoming: true);
+      },
+    );
+  }
+
+  Widget _buildMissedTab() {
+    final missedItems = _scheduleResponse!.getMissedForBaby(widget.babyId);
+
+    if (missedItems.isEmpty) {
+      return _buildEmptyState(
+        'No missed immunizations',
+        'All immunizations are on track.',
+        Icons.sentiment_satisfied_alt_rounded,
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+      itemCount: missedItems.length,
+      itemBuilder: (context, index) {
+        final item = missedItems[index];
+        return _buildMissedCard(item);
       },
     );
   }
@@ -225,6 +250,96 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
         final item = takenItems[index];
         return _buildScheduleCard(item, isUpcoming: false);
       },
+    );
+  }
+
+  Widget _buildMissedCard(ImmunizationItem item) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: AppConstants.cardElevation,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+          color: AppConstants.errorRed.withValues(alpha: 0.1),
+        ),
+        child: ListTile(
+          contentPadding: const EdgeInsets.all(16),
+          leading: CircleAvatar(
+            backgroundColor: AppConstants.errorRed.withValues(alpha: 0.2),
+            child: const Icon(
+              Icons.warning_rounded,
+              color: AppConstants.errorRed,
+            ),
+          ),
+          title: Text(
+            item.vaccineWithDose,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              // Original scheduled date (missed)
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Scheduled: ${_formatDate(item.scheduleDate)}',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
+                ],
+              ),
+              // Catch-up date (rescheduled) in RED
+              if (item.catchUpDate != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppConstants.errorRed.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppConstants.errorRed, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.update,
+                        size: 16,
+                        color: AppConstants.errorRed,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Catch Up: ${_formatDate(item.catchUpDate!)}',
+                        style: const TextStyle(
+                          color: AppConstants.errorRed,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppConstants.errorRed.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'MISSED',
+                  style: TextStyle(
+                    color: AppConstants.errorRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -354,6 +469,11 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
   int _getUpcomingCount() {
     if (_scheduleResponse == null) return 0;
     return _scheduleResponse!.getUpcomingForBaby(widget.babyId).length;
+  }
+
+  int _getMissedCount() {
+    if (_scheduleResponse == null) return 0;
+    return _scheduleResponse!.getMissedForBaby(widget.babyId).length;
   }
 
   int _getTakenCount() {

@@ -88,7 +88,21 @@ class AppDrawer extends StatelessWidget {
                   title: const Text('Approved Requests'),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, AppConstants.chrRequestsRoute);
+                    Navigator.pushNamed(
+                      context,
+                      AppConstants.approvedRequestsRoute,
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.vaccines),
+                  title: const Text('Immunization Approvals'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(
+                      context,
+                      AppConstants.immunizationApprovalsRoute,
+                    );
                   },
                 ),
                 ListTile(

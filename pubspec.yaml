@@ -70,6 +70,12 @@ dependencies:
   # Supabase
   supabase_flutter: ^2.0.0
 
+  # OTP input field
+  flutter_otp_text_field: ^1.1.1
+
+  # Country picker for phone numbers
+  country_picker: ^2.0.20
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

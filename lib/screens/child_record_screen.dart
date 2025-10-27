@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../services/api_client.dart';
 import '../models/child_detail.dart';
+import '../models/immunization.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../mixins/animated_alert_mixin.dart';
@@ -19,7 +20,9 @@ class ChildRecordScreen extends StatefulWidget {
 class _ChildRecordScreenState extends State<ChildRecordScreen>
     with AnimatedAlertMixin {
   ChildDetail? _childDetail;
+  List<ImmunizationItem> _vaccinations = [];
   bool _isLoading = true;
+  bool _isLoadingVaccinations = false;
   String? _error;
   Set<String> _requestingTypes = {};
 
@@ -27,6 +30,7 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
   void initState() {
     super.initState();
     _loadChildDetails();
+    _loadVaccinationData();
   }
 
   Future<void> _loadChildDetails() async {
@@ -87,6 +91,33 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
     }
   }
 
+  Future<void> _loadVaccinationData() async {
+    setState(() => _isLoadingVaccinations = true);
+
+    try {
+      final response = await ApiClient.instance.getImmunizationSchedule();
+      if (response.data['status'] == 'success') {
+        final scheduleResponse = ImmunizationScheduleResponse.fromJson(
+          response.data,
+        );
+        final allVaccinations = scheduleResponse.data;
+        // Filter vaccinations for this child and get only TAKEN ones
+        setState(() {
+          _vaccinations = allVaccinations
+              .where(
+                (v) =>
+                    v.babyId == widget.babyId &&
+                    (v.isTaken || v.status == 'taken'),
+              )
+              .toList();
+          _isLoadingVaccinations = false;
+        });
+      }
+    } catch (e) {
+      setState(() => _isLoadingVaccinations = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return buildWithAlerts(
@@ -132,29 +163,77 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
       return const Center(child: Text('No data available'));
     }
 
+    // Check if tablet (> 600px width)
+    final isTablet = MediaQuery.of(context).size.width > 600;
+
     return RefreshIndicator(
       onRefresh: _loadChildDetails,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
-        child: Column(
+        child: isTablet ? _buildTabletLayout() : _buildMobileLayout(),
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildBasicInfo(),
+        const SizedBox(height: 24),
+        _buildBirthInfo(),
+        const SizedBox(height: 24),
+        _buildParentInfo(),
+        const SizedBox(height: 24),
+        _buildHealthInfo(),
+        const SizedBox(height: 24),
+        _buildBreastfeedingInfo(),
+        const SizedBox(height: 24),
+        _buildMotherTDInfo(),
+        const SizedBox(height: 24),
+        _buildVaccinationLedger(),
+        const SizedBox(height: 24),
+        _buildRequestButtons(),
+      ],
+    );
+  }
+
+  Widget _buildTabletLayout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Row 1: Basic Info + Birth Info (2 columns)
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildBasicInfo(),
-            const SizedBox(height: 24),
-            _buildBirthInfo(),
-            const SizedBox(height: 24),
-            _buildParentInfo(),
-            const SizedBox(height: 24),
-            _buildHealthInfo(),
-            const SizedBox(height: 24),
-            _buildBreastfeedingInfo(),
-            const SizedBox(height: 24),
-            _buildMotherTDInfo(),
-            const SizedBox(height: 24),
-            _buildRequestButtons(),
+            Expanded(child: _buildBasicInfo()),
+            const SizedBox(width: 16),
+            Expanded(child: _buildBirthInfo()),
           ],
         ),
-      ),
+        const SizedBox(height: 24),
+        // Row 2: Parent Info + Health Info (2 columns)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildParentInfo()),
+            const SizedBox(width: 16),
+            Expanded(child: _buildHealthInfo()),
+          ],
+        ),
+        const SizedBox(height: 24),
+        // Breastfeeding (full width)
+        _buildBreastfeedingInfo(),
+        const SizedBox(height: 24),
+        // Mother's TD (full width)
+        _buildMotherTDInfo(),
+        const SizedBox(height: 24),
+        // Vaccination Ledger (full width)
+        _buildVaccinationLedger(),
+        const SizedBox(height: 24),
+        // Request Buttons (full width)
+        _buildRequestButtons(),
+      ],
     );
   }
 
@@ -581,5 +660,114 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildVaccinationLedger() {
+    return _buildSection('Vaccination Ledger', [
+      _isLoadingVaccinations
+          ? const Center(child: CircularProgressIndicator())
+          : _vaccinations.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No vaccination records available',
+                style: TextStyle(color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+            )
+          : _buildVaccinationTable(),
+    ]);
+  }
+
+  Widget _buildVaccinationTable() {
+    // Scrollable container for tablet, simple list for mobile
+    final isTablet = MediaQuery.of(context).size.width > 600;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        width: isTablet ? 1200 : MediaQuery.of(context).size.width - 64,
+        child: DataTable(
+          columnSpacing: 12,
+          headingRowColor: MaterialStateProperty.all(
+            AppConstants.primaryGreen.withValues(alpha: 0.1),
+          ),
+          columns: const [
+            DataColumn(label: Text('Date', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('Purpose', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('HT', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('WT', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('ME/AC', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('STATUS', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('Cond.', style: TextStyle(fontSize: 11))),
+            DataColumn(label: Text('Advice', style: TextStyle(fontSize: 11))),
+            DataColumn(
+              label: Text('Next Sched', style: TextStyle(fontSize: 11)),
+            ),
+            DataColumn(label: Text('Remarks', style: TextStyle(fontSize: 11))),
+          ],
+          rows: _vaccinations.map((vaccination) {
+            final dateGiven = vaccination.dateGiven ?? '';
+            final formattedDate = dateGiven.isNotEmpty
+                ? _formatDateForTable(dateGiven)
+                : '';
+            final vaccineName =
+                '${vaccination.vaccineName} (Dose ${vaccination.doseNumber})';
+            final status = vaccination.status.toUpperCase();
+
+            return DataRow(
+              cells: [
+                DataCell(
+                  Text(formattedDate, style: const TextStyle(fontSize: 10)),
+                ),
+                DataCell(
+                  Tooltip(
+                    message: vaccineName,
+                    child: Text(
+                      vaccination.vaccineName.length > 10
+                          ? '${vaccination.vaccineName.substring(0, 10)}...'
+                          : vaccination.vaccineName,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                ),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+                DataCell(
+                  Text(
+                    status,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: status == 'TAKEN' || status == 'COMPLETED'
+                          ? AppConstants.successGreen
+                          : Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+                const DataCell(Text('', style: TextStyle(fontSize: 10))),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  String _formatDateForTable(String dateString) {
+    if (dateString.isEmpty) return '';
+    try {
+      final date = DateTime.parse(dateString);
+      final month = date.month.toString().padLeft(2, '0');
+      final day = date.day.toString().padLeft(2, '0');
+      final year = date.year.toString().substring(2);
+      return '$month/$day/$year';
+    } catch (e) {
+      return '';
+    }
   }
 }

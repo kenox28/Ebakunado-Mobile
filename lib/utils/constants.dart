@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  // API Configuration
   static const String baseUrl =
-      'http://192.168.43.73/ebakunado'; // Local server
+      'http://192.168.43.73/ebakunado'; // Website server - all endpoints point here
+
   static const String apiKey = 'MY_SECRET_KEY';
   static const int requestTimeout = 30; // seconds
 
@@ -50,6 +50,12 @@ class AppConstants {
   static const String getMyChrRequestsEndpoint =
       '/php/supabase/users/get_my_chr_requests.php';
 
+  // Immunization Approval Endpoints
+  static const String getImmunizationApprovalsEndpoint =
+      '/php/supabase/users/get_immunization_approvals.php';
+  static const String downloadImmunizationCertificateEndpoint =
+      '/php/supabase/users/download_immunization_certificate.php';
+
   // Add Child Endpoints
   static const String addChildEndpoint = '/php/supabase/users/add_child.php';
   static const String claimChildWithCodeEndpoint =
@@ -64,6 +70,22 @@ class AppConstants {
       '/php/supabase/users/update_profile.php';
   static const String uploadProfilePhotoEndpoint =
       '/php/supabase/users/upload_profile_photo.php';
+
+  // Create Account Endpoints
+  static const String sendOtpEndpoint = '/php/supabase/send_otp.php';
+  static const String verifyOtpEndpoint = '/php/supabase/verify_otp.php';
+  static const String getPlacesEndpoint = '/php/supabase/admin/get_places.php';
+  static const String createAccountEndpoint =
+      '/php/supabase/create_account.php';
+  static const String generateCsrfEndpoint = '/php/supabase/generate_csrf.php';
+
+  // Forgot Password Endpoints
+  static const String forgotPasswordEndpoint =
+      '/php/supabase/forgot_password.php';
+  static const String verifyResetOtpEndpoint =
+      '/php/supabase/verify_reset_otp.php';
+  static const String resetPasswordEndpoint =
+      '/php/supabase/reset_password.php';
 
   // Legacy Endpoints (keeping for compatibility)
   static const String getUsersEndpoint = '/get_users.php';
@@ -104,9 +126,14 @@ class AppConstants {
 
   // Route Names
   static const String loginRoute = '/login';
+  static const String createAccountRoute = '/create_account';
+  static const String forgotPasswordRequestRoute = '/forgot_password_request';
+  static const String forgotPasswordVerifyRoute = '/forgot_password_verify';
+  static const String forgotPasswordResetRoute = '/forgot_password_reset';
   static const String homeRoute = '/home';
   static const String requestChildRoute = '/request_child';
   static const String approvedRequestsRoute = '/approved_requests';
+  static const String immunizationApprovalsRoute = '/immunization_approvals';
   static const String upcomingScheduleRoute = '/upcoming_schedule';
   static const String childRecordRoute = '/child_record';
   static const String addChildRoute = '/add_child';

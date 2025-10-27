@@ -9,6 +9,12 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import '../utils/constants.dart';
 import '../models/chr_requests.dart';
+import '../models/immunization_approval.dart' as immunization;
+import '../models/create_account_request.dart';
+import '../models/otp_response.dart';
+import '../models/locations_response.dart';
+import '../models/create_account_response.dart';
+import '../models/csrf_token.dart';
 
 class AuthExpiredException implements Exception {
   final String message;
@@ -218,6 +224,85 @@ class ApiClient {
     return await _dio.get(AppConstants.getMyChrRequestsEndpoint);
   }
 
+  // Immunization Approval methods
+  Future<Response> getImmunizationApprovals() async {
+    await _ensureInitialized();
+    return await _dio.get(AppConstants.getImmunizationApprovalsEndpoint);
+  }
+
+  // Download immunization certificate with modern permission handling
+  Future<DownloadResult> downloadImmunizationCertificate(
+    immunization.ImmunizationApproval approval,
+  ) async {
+    await _ensureInitialized();
+
+    try {
+      // Check Android version and request appropriate permissions
+      if (Platform.isAndroid) {
+        final isAndroid13OrHigher = await _isAndroid13OrHigher();
+
+        if (isAndroid13OrHigher) {
+          debugPrint(
+            'Android 13+ detected, requesting manage external storage permission',
+          );
+
+          // For Android 13+, request manage external storage permission first
+          final managePermission = await Permission.manageExternalStorage
+              .request();
+          if (managePermission.isGranted) {
+            debugPrint('Manage external storage permission granted');
+            return await _downloadImmunizationCertificateToPublicDirectoryViaBytes(
+              approval,
+            );
+          } else {
+            debugPrint(
+              'Manage external storage permission denied, trying private directory',
+            );
+            // Fallback to private directory if permission denied
+            final privateResult =
+                await _downloadImmunizationCertificateToPrivateDirectory(
+                  approval,
+                );
+            if (privateResult.success) {
+              debugPrint('Private directory download successful');
+              return privateResult;
+            } else {
+              return DownloadResult.failure(
+                'Storage permission denied. Please enable "All files access" in app settings to save to Downloads folder.',
+              );
+            }
+          }
+        } else {
+          debugPrint(
+            'Older Android version detected, requesting storage permission',
+          );
+          // For older Android versions, request storage permission
+          final permission = await Permission.storage.request();
+          if (!permission.isGranted) {
+            debugPrint('Storage permission denied for older Android');
+            return DownloadResult.failure(
+              'Storage permission denied. Please enable storage access in settings.',
+            );
+          }
+          debugPrint('Storage permission granted for older Android');
+        }
+      }
+
+      // Try direct download first
+      final directResult = await _downloadImmunizationCertificateDirect(
+        approval,
+      );
+      if (directResult.success) {
+        return directResult;
+      }
+
+      // Fallback to proxy download
+      return await _downloadImmunizationCertificateViaProxy(approval);
+    } catch (e) {
+      return DownloadResult.failure('Download failed: $e');
+    }
+  }
+
   // Add Child method
   Future<Response> addChild(Map<String, dynamic> childData) async {
     await _ensureInitialized();
@@ -239,29 +324,38 @@ class ApiClient {
         final isAndroid13OrHigher = await _isAndroid13OrHigher();
 
         if (isAndroid13OrHigher) {
-          debugPrint('Android 13+ detected, using private directory approach');
-
-          // For Android 13+, try private directory first (no permissions needed)
-          final privateResult = await _downloadToPrivateDirectory(chrRequest);
-          if (privateResult.success) {
-            debugPrint('Private directory download successful');
-            return privateResult;
-          }
-
           debugPrint(
-            'Private directory failed, requesting manage external storage permission',
+            'Android 13+ detected, requesting manage external storage permission',
           );
-          // If private directory fails, try requesting manage external storage permission
+
+          // For Android 13+, request manage external storage permission first
           final managePermission = await Permission.manageExternalStorage
               .request();
           if (managePermission.isGranted) {
             debugPrint('Manage external storage permission granted');
-            return await _downloadToPublicDirectoryViaBytes(chrRequest);
-          } else {
-            debugPrint('Manage external storage permission denied');
-            return DownloadResult.failure(
-              'Storage permission denied. Please enable "All files access" in app settings.',
+            // Try direct download first, fallback to proxy if it fails
+            final directResult = await _downloadToPublicDirectoryViaBytes(
+              chrRequest,
             );
+            if (directResult.success) {
+              return directResult;
+            }
+            debugPrint('Direct download failed, trying proxy download');
+            return await _downloadViaProxy(chrRequest);
+          } else {
+            debugPrint(
+              'Manage external storage permission denied, trying private directory',
+            );
+            // Fallback to private directory if permission denied
+            final privateResult = await _downloadToPrivateDirectory(chrRequest);
+            if (privateResult.success) {
+              debugPrint('Private directory download successful');
+              return privateResult;
+            } else {
+              return DownloadResult.failure(
+                'Storage permission denied. Please enable "All files access" in app settings to save to Downloads folder.',
+              );
+            }
           }
         } else {
           debugPrint(
@@ -276,10 +370,18 @@ class ApiClient {
             );
           }
           debugPrint('Storage permission granted for older Android');
+          // Try direct download first, fallback to proxy if it fails
+          final directResult = await _downloadDirect(chrRequest);
+          if (directResult.success) {
+            return directResult;
+          }
+          debugPrint('Direct download failed, trying proxy download');
+          return await _downloadViaProxy(chrRequest);
         }
       }
 
-      // Try direct download first
+      // For non-Android platforms or if we reach here
+      // Try direct download first, fallback to proxy if it fails
       final directResult = await _downloadDirect(chrRequest);
       if (directResult.success) {
         return directResult;
@@ -338,6 +440,8 @@ class ApiClient {
       final proxyUrl =
           '${AppConstants.baseUrl}/php/supabase/users/download_chr_doc.php?url=$encodedUrl';
 
+      debugPrint('Proxy download URL: $proxyUrl');
+
       final response = await _dio.get(
         proxyUrl,
         options: Options(responseType: ResponseType.bytes),
@@ -378,10 +482,17 @@ class ApiClient {
   }
 
   String _transformCloudinaryUrl(String originalUrl) {
-    return originalUrl.replaceAll(
+    debugPrint('Original Cloudinary URL: $originalUrl');
+
+    // Transform Cloudinary URL for direct download
+    // Replace /image/upload/ or /raw/upload/ with /image/upload/fl_attachment/ or /raw/upload/fl_attachment/
+    String transformedUrl = originalUrl.replaceAll(
       RegExp(r'/(image|raw)/upload/'),
       r'/$1/upload/fl_attachment/',
     );
+
+    debugPrint('Transformed Cloudinary URL: $transformedUrl');
+    return transformedUrl;
   }
 
   // Save file to private directory (no permissions needed)
@@ -491,6 +602,116 @@ class ApiClient {
     );
   }
 
+  // Create Account API Methods
+
+  // Send OTP for phone verification
+  Future<OtpResponse> sendOtp(String phoneNumber) async {
+    await _ensureInitialized();
+
+    print('Sending OTP to: $phoneNumber');
+    print('Endpoint: ${AppConstants.baseUrl}${AppConstants.sendOtpEndpoint}');
+
+    final formData = FormData.fromMap({'phone_number': phoneNumber});
+
+    final response = await _dio.post(
+      AppConstants.sendOtpEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    print('OTP Response: ${response.data}');
+    return OtpResponse.fromJson(response.data);
+  }
+
+  // Verify OTP
+  Future<OtpResponse> verifyOtp(String otp) async {
+    await _ensureInitialized();
+
+    final formData = FormData.fromMap({'otp': otp});
+
+    final response = await _dio.post(
+      AppConstants.verifyOtpEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    return OtpResponse.fromJson(response.data);
+  }
+
+  // Get locations (provinces, cities, barangays, puroks)
+  Future<LocationsResponse> getLocations({
+    String? type,
+    String? province,
+    String? cityMunicipality,
+    String? barangay,
+  }) async {
+    await _ensureInitialized();
+
+    final queryParams = <String, dynamic>{};
+    if (type != null) queryParams['type'] = type;
+    if (province != null) queryParams['province'] = province;
+    if (cityMunicipality != null)
+      queryParams['city_municipality'] = cityMunicipality;
+    if (barangay != null) queryParams['barangay'] = barangay;
+
+    print('Fetching locations with params: $queryParams');
+    print('Endpoint: ${AppConstants.baseUrl}${AppConstants.getPlacesEndpoint}');
+
+    final response = await _dio.get(
+      AppConstants.getPlacesEndpoint,
+      queryParameters: queryParams,
+    );
+
+    print('Locations Response: ${response.data}');
+    return LocationsResponse.fromJson(response.data);
+  }
+
+  // Generate CSRF token
+  Future<CsrfToken> generateCsrfToken() async {
+    await _ensureInitialized();
+
+    final response = await _dio.get(AppConstants.generateCsrfEndpoint);
+    return CsrfToken.fromJson(response.data);
+  }
+
+  // Create account
+  Future<CreateAccountResponse> createAccount(
+    CreateAccountRequest request,
+  ) async {
+    await _ensureInitialized();
+
+    // Use special mobile app token as per PHP endpoint requirements
+    final requestWithCsrf = CreateAccountRequest(
+      fname: request.fname,
+      lname: request.lname,
+      email: request.email,
+      number: request.number,
+      gender: request.gender,
+      province: request.province,
+      cityMunicipality: request.cityMunicipality,
+      barangay: request.barangay,
+      purok: request.purok,
+      password: request.password,
+      confirmPassword: request.confirmPassword,
+      csrfToken: 'BYPASS_FOR_MOBILE_APP', // Special token for mobile apps
+      mobileAppRequest: true,
+      skipOtp: false, // OTP already verified in previous step
+    );
+
+    print('Creating account with data: ${requestWithCsrf.toJson()}');
+
+    final formData = FormData.fromMap(requestWithCsrf.toJson());
+
+    final response = await _dio.post(
+      AppConstants.createAccountEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    print('Create Account Response: ${response.data}');
+    return CreateAccountResponse.fromJson(response.data);
+  }
+
   // Generic GET request
   Future<Response> get(
     String path, {
@@ -523,10 +744,13 @@ class ApiClient {
     ChrRequest chrRequest,
   ) async {
     try {
-      // Get app's downloads directory (private to app)
-      final downloadsDir = await getDownloadsDirectory();
-      if (downloadsDir == null) {
-        return DownloadResult.failure('Downloads directory not available');
+      // Get app's documents directory (private to app)
+      final appDir = await getApplicationDocumentsDirectory();
+
+      // Create a downloads subdirectory within the app directory
+      final downloadsDir = Directory('${appDir.path}/Downloads');
+      if (!downloadsDir.existsSync()) {
+        await downloadsDir.create();
       }
 
       // Create the file path
@@ -545,7 +769,7 @@ class ApiClient {
         final file = File(filePath);
         await file.writeAsBytes(response.data);
 
-        debugPrint('File downloaded to private directory: $filePath');
+        debugPrint('File downloaded to private app directory: $filePath');
         return DownloadResult.success(filePath);
       } else {
         debugPrint(
@@ -585,5 +809,247 @@ class ApiClient {
       debugPrint('Error downloading to public directory: $e');
       return DownloadResult.failure('Download failed: $e');
     }
+  }
+
+  // Immunization Certificate Download Methods
+  Future<DownloadResult> _downloadImmunizationCertificateDirect(
+    immunization.ImmunizationApproval approval,
+  ) async {
+    try {
+      final transformedUrl = _transformCloudinaryUrl(approval.certificateUrl!);
+      final response = await _dio.get(
+        transformedUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode == 200) {
+        // For Android 13+, use private directory, for older versions use public directory
+        String filePath;
+        if (Platform.isAndroid) {
+          final isAndroid13OrHigher = await _isAndroid13OrHigher();
+          if (isAndroid13OrHigher) {
+            filePath = await _saveToPrivateDirectory(
+              response.data,
+              approval.getFileName(),
+            );
+          } else {
+            filePath = await _saveToPublicDirectory(
+              response.data,
+              approval.getFileName(),
+            );
+          }
+        } else {
+          filePath = await _saveToPrivateDirectory(
+            response.data,
+            approval.getFileName(),
+          );
+        }
+
+        return DownloadResult.success(filePath);
+      }
+    } catch (e) {
+      debugPrint('Direct immunization certificate download error: $e');
+      // Fall through to proxy
+    }
+    return DownloadResult.failure('Direct download failed');
+  }
+
+  Future<DownloadResult> _downloadImmunizationCertificateViaProxy(
+    immunization.ImmunizationApproval approval,
+  ) async {
+    try {
+      final encodedUrl = Uri.encodeComponent(approval.certificateUrl!);
+      final proxyUrl =
+          '${AppConstants.baseUrl}/php/supabase/users/download_immunization_certificate.php?url=$encodedUrl';
+
+      final response = await _dio.get(
+        proxyUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint(
+          'Proxy immunization certificate download successful, saving file',
+        );
+        // Use the same directory logic as direct download
+        String filePath;
+        if (Platform.isAndroid) {
+          final isAndroid13OrHigher = await _isAndroid13OrHigher();
+          if (isAndroid13OrHigher) {
+            filePath = await _saveToPrivateDirectory(
+              response.data,
+              approval.getFileName(),
+            );
+          } else {
+            filePath = await _saveToPublicDirectory(
+              response.data,
+              approval.getFileName(),
+            );
+          }
+        } else {
+          filePath = await _saveToPrivateDirectory(
+            response.data,
+            approval.getFileName(),
+          );
+        }
+
+        debugPrint('Proxy download saved to: $filePath');
+        return DownloadResult.success(filePath);
+      }
+    } catch (e) {
+      debugPrint('Proxy immunization certificate download error: $e');
+      return DownloadResult.failure('Proxy download failed: ${e.toString()}');
+    }
+    return DownloadResult.failure('Download failed');
+  }
+
+  // Download immunization certificate to app private directory (no permissions needed)
+  Future<DownloadResult> _downloadImmunizationCertificateToPrivateDirectory(
+    immunization.ImmunizationApproval approval,
+  ) async {
+    try {
+      // Get app's documents directory (private to app)
+      final appDir = await getApplicationDocumentsDirectory();
+
+      // Create a downloads subdirectory within the app directory
+      final downloadsDir = Directory('${appDir.path}/Downloads');
+      if (!downloadsDir.existsSync()) {
+        await downloadsDir.create();
+      }
+
+      // Create the file path
+      final fileName = approval.getFileName();
+      final filePath = '${downloadsDir.path}/$fileName';
+
+      // Download the file
+      final transformedUrl = _transformCloudinaryUrl(approval.certificateUrl!);
+      final response = await _dio.get(
+        transformedUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode == 200) {
+        // Write file to private directory
+        final file = File(filePath);
+        await file.writeAsBytes(response.data);
+
+        debugPrint(
+          'Immunization certificate downloaded to private app directory: $filePath',
+        );
+        return DownloadResult.success(filePath);
+      } else {
+        debugPrint(
+          'Private directory download failed with status: ${response.statusCode}',
+        );
+        return DownloadResult.failure(
+          'Download failed: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'Error downloading immunization certificate to private directory: $e',
+      );
+      return DownloadResult.failure('Download failed: $e');
+    }
+  }
+
+  // Download immunization certificate to public directory with manage external storage permission
+  Future<DownloadResult>
+  _downloadImmunizationCertificateToPublicDirectoryViaBytes(
+    immunization.ImmunizationApproval approval,
+  ) async {
+    try {
+      final transformedUrl = _transformCloudinaryUrl(approval.certificateUrl!);
+      final response = await _dio.get(
+        transformedUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode == 200) {
+        final filePath = await _saveToPublicDirectory(
+          response.data,
+          approval.getFileName(),
+        );
+        return DownloadResult.success(filePath);
+      }
+
+      return DownloadResult.failure('Download failed: ${response.statusCode}');
+    } catch (e) {
+      debugPrint(
+        'Error downloading immunization certificate to public directory: $e',
+      );
+      return DownloadResult.failure('Download failed: $e');
+    }
+  }
+
+  // Forgot Password API Methods
+
+  // Request password reset (send OTP via email or SMS)
+  Future<Response> forgotPassword(String emailPhone) async {
+    await _ensureInitialized();
+
+    print('Requesting password reset for: $emailPhone');
+    print(
+      'Endpoint: ${AppConstants.baseUrl}${AppConstants.forgotPasswordEndpoint}',
+    );
+
+    final formData = FormData.fromMap({'email_phone': emailPhone});
+
+    final response = await _dio.post(
+      AppConstants.forgotPasswordEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    print('Forgot Password Response: ${response.data}');
+    return response;
+  }
+
+  // Verify reset OTP
+  Future<Response> verifyResetOtp(String otp) async {
+    await _ensureInitialized();
+
+    print('Verifying reset OTP: $otp');
+    print(
+      'Endpoint: ${AppConstants.baseUrl}${AppConstants.verifyResetOtpEndpoint}',
+    );
+
+    final formData = FormData.fromMap({'otp': otp});
+
+    final response = await _dio.post(
+      AppConstants.verifyResetOtpEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    print('Verify Reset OTP Response: ${response.data}');
+    return response;
+  }
+
+  // Reset password
+  Future<Response> resetPassword(
+    String newPassword,
+    String confirmPassword,
+  ) async {
+    await _ensureInitialized();
+
+    print('Resetting password');
+    print(
+      'Endpoint: ${AppConstants.baseUrl}${AppConstants.resetPasswordEndpoint}',
+    );
+
+    final formData = FormData.fromMap({
+      'new_password': newPassword,
+      'confirm_password': confirmPassword,
+    });
+
+    final response = await _dio.post(
+      AppConstants.resetPasswordEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    print('Reset Password Response: ${response.data}');
+    return response;
   }
 }
