@@ -675,84 +675,263 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                 textAlign: TextAlign.center,
               ),
             )
-          : _buildVaccinationTable(),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Visual hint for horizontal scrolling
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.chevron_left,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Swipe left/right',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'to see all columns',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildVaccinationTable(),
+              ],
+            ),
     ]);
   }
 
   Widget _buildVaccinationTable() {
-    // Scrollable container for tablet, simple list for mobile
     final isTablet = MediaQuery.of(context).size.width > 600;
+    // Calculate minimum width needed for all columns
+    // Date: 60, Purpose: 100, HT: 40, WT: 40, ME/AC: 60, STATUS: 70, Cond: 60, Advice: 80, Next Sched: 90, Remarks: 80
+    // Total: ~720px minimum, but we'll use 900px to be safe
+    final minTableWidth = isTablet ? 1200.0 : 900.0;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Container(
-        width: isTablet ? 1200 : MediaQuery.of(context).size.width - 64,
-        child: DataTable(
-          columnSpacing: 12,
-          headingRowColor: MaterialStateProperty.all(
-            AppConstants.primaryGreen.withValues(alpha: 0.1),
-          ),
-          columns: const [
-            DataColumn(label: Text('Date', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('Purpose', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('HT', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('WT', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('ME/AC', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('STATUS', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('Cond.', style: TextStyle(fontSize: 11))),
-            DataColumn(label: Text('Advice', style: TextStyle(fontSize: 11))),
-            DataColumn(
-              label: Text('Next Sched', style: TextStyle(fontSize: 11)),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Container(
+          width: minTableWidth,
+          child: DataTable(
+            columnSpacing: 8,
+            horizontalMargin: 12,
+            headingRowColor: MaterialStateProperty.all(
+              AppConstants.primaryGreen.withValues(alpha: 0.1),
             ),
-            DataColumn(label: Text('Remarks', style: TextStyle(fontSize: 11))),
-          ],
-          rows: _vaccinations.map((vaccination) {
-            final dateGiven = vaccination.dateGiven ?? '';
-            final formattedDate = dateGiven.isNotEmpty
-                ? _formatDateForTable(dateGiven)
-                : '';
-            final vaccineName =
-                '${vaccination.vaccineName} (Dose ${vaccination.doseNumber})';
-            final status = vaccination.status.toUpperCase();
+            columns: const [
+              DataColumn(
+                label: SizedBox(
+                  width: 60,
+                  child: Text(
+                    'Date',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 100,
+                  child: Text(
+                    'Purpose',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 40,
+                  child: Text(
+                    'HT',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 40,
+                  child: Text(
+                    'WT',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 60,
+                  child: Text(
+                    'ME/AC',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 70,
+                  child: Text(
+                    'STATUS',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 60,
+                  child: Text(
+                    'Cond.',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 80,
+                  child: Text(
+                    'Advice',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 90,
+                  child: Text(
+                    'Next Sched',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              DataColumn(
+                label: SizedBox(
+                  width: 80,
+                  child: Text(
+                    'Remarks',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+            rows: _vaccinations.map((vaccination) {
+              final dateGiven = vaccination.dateGiven ?? '';
+              final formattedDate = dateGiven.isNotEmpty
+                  ? _formatDateForTable(dateGiven)
+                  : '';
+              final vaccineName =
+                  '${vaccination.vaccineName} (Dose ${vaccination.doseNumber})';
+              final status = vaccination.status.toUpperCase();
 
-            return DataRow(
-              cells: [
-                DataCell(
-                  Text(formattedDate, style: const TextStyle(fontSize: 10)),
-                ),
-                DataCell(
-                  Tooltip(
-                    message: vaccineName,
-                    child: Text(
-                      vaccination.vaccineName.length > 10
-                          ? '${vaccination.vaccineName.substring(0, 10)}...'
-                          : vaccination.vaccineName,
-                      style: const TextStyle(fontSize: 10),
+              return DataRow(
+                cells: [
+                  DataCell(
+                    SizedBox(
+                      width: 60,
+                      child: Text(
+                        formattedDate,
+                        style: const TextStyle(fontSize: 10),
+                      ),
                     ),
                   ),
-                ),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-                DataCell(
-                  Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: status == 'TAKEN' || status == 'COMPLETED'
-                          ? AppConstants.successGreen
-                          : Colors.grey,
-                      fontWeight: FontWeight.bold,
+                  DataCell(
+                    SizedBox(
+                      width: 100,
+                      child: Tooltip(
+                        message: vaccineName,
+                        child: Text(
+                          vaccination.vaccineName.length > 12
+                              ? '${vaccination.vaccineName.substring(0, 12)}...'
+                              : vaccination.vaccineName,
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-                const DataCell(Text('', style: TextStyle(fontSize: 10))),
-              ],
-            );
-          }).toList(),
+                  const DataCell(
+                    SizedBox(
+                      width: 40,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  const DataCell(
+                    SizedBox(
+                      width: 40,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  const DataCell(
+                    SizedBox(
+                      width: 60,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  DataCell(
+                    SizedBox(
+                      width: 70,
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: status == 'TAKEN' || status == 'COMPLETED'
+                              ? AppConstants.successGreen
+                              : Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const DataCell(
+                    SizedBox(
+                      width: 60,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  const DataCell(
+                    SizedBox(
+                      width: 80,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  const DataCell(
+                    SizedBox(
+                      width: 90,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  const DataCell(
+                    SizedBox(
+                      width: 80,
+                      child: Text('', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );

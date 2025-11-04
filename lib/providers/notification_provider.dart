@@ -97,6 +97,14 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  // Clear all cached data (called on logout)
+  void clear() {
+    _notifications = [];
+    _unreadCount = 0;
+    _totalCount = 0;
+    notifyListeners();
+  }
+
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();

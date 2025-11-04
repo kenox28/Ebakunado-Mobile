@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
 
 enum AlertType { success, error, warning, info }
 
@@ -87,16 +86,17 @@ class _AnimatedAlertState extends State<AnimatedAlert>
     });
   }
 
-  Color _getBackgroundColor() {
+  // Modern color scheme - colored accents on white background
+  Color _getAccentColor() {
     switch (widget.type) {
       case AlertType.success:
-        return AppConstants.alertSuccess;
+        return const Color(0xFF10B981); // Green
       case AlertType.error:
-        return AppConstants.alertError;
+        return const Color(0xFFEF4444); // Red
       case AlertType.warning:
-        return AppConstants.alertWarning;
+        return const Color(0xFFF59E0B); // Amber
       case AlertType.info:
-        return AppConstants.alertInfo;
+        return const Color(0xFF3B82F6); // Blue
     }
   }
 
@@ -105,13 +105,13 @@ class _AnimatedAlertState extends State<AnimatedAlert>
 
     switch (widget.type) {
       case AlertType.success:
-        return Icons.check_circle;
+        return Icons.check_circle_rounded;
       case AlertType.error:
-        return Icons.error;
+        return Icons.error_rounded;
       case AlertType.warning:
-        return Icons.warning;
+        return Icons.warning_rounded;
       case AlertType.info:
-        return Icons.info;
+        return Icons.info_rounded;
     }
   }
 
@@ -130,57 +130,84 @@ class _AnimatedAlertState extends State<AnimatedAlert>
                 right: 16,
                 left: 16,
               ),
-              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _getBackgroundColor(),
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border(
+                  left: BorderSide(color: _getAccentColor(), width: 4),
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: _getBackgroundColor().withValues(alpha: 0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
                     spreadRadius: 0,
                   ),
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 4,
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
                     offset: const Offset(0, 2),
                     spreadRadius: 0,
                   ),
                 ],
               ),
-              child: Row(
-                children: [
-                  Icon(_getIcon(), color: Colors.white, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      widget.message,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: _dismissAlert,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // Colored icon badge
+                    Container(
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
+                        color: _getAccentColor().withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 18,
+                      child: Icon(
+                        _getIcon(),
+                        color: _getAccentColor(),
+                        size: 22,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    // Message text
+                    Expanded(
+                      child: Text(
+                        widget.message,
+                        style: TextStyle(
+                          color: const Color(0xFF374151), // Dark gray text
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.1,
+                          height: 1.4,
+                          decoration:
+                              TextDecoration.none, // Fix underline issue
+                        ),
+                        selectionColor:
+                            Colors.transparent, // Prevent selection highlight
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Close button
+                    GestureDetector(
+                      onTap: _dismissAlert,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFFF3F4F6,
+                          ), // Light gray background
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          color: Color(0xFF6B7280), // Gray icon
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

@@ -82,6 +82,15 @@ class DashboardProvider extends ChangeNotifier {
     }
   }
 
+  // Clear all cached data (called on logout)
+  void clear() {
+    _summary = null;
+    _childrenSummary = null;
+    _acceptedChildren = [];
+    _selectedFilter = 'upcoming';
+    notifyListeners();
+  }
+
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();

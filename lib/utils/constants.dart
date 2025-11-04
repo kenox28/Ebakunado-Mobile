@@ -71,7 +71,6 @@ class AppConstants {
   static const String uploadProfilePhotoEndpoint =
       '/php/supabase/users/upload_profile_photo.php';
 
-  // Create Account Endpoints
   static const String sendOtpEndpoint = '/php/supabase/send_otp.php';
   static const String verifyOtpEndpoint = '/php/supabase/verify_otp.php';
   static const String getPlacesEndpoint = '/php/supabase/admin/get_places.php';

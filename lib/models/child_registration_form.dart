@@ -53,7 +53,7 @@ class ChildRegistrationForm {
         'T',
       )[0], // YYYY-MM-DD format
       'place_of_birth': placeOfBirth ?? '',
-      'address': address,
+      'child_address': address,
       'birth_weight': birthWeight?.toString() ?? '',
       'birth_height': birthHeight?.toString() ?? '',
       'blood_type': bloodType ?? '',
@@ -61,7 +61,9 @@ class ChildRegistrationForm {
       'child_gender': gender,
       'mother_name': motherName,
       'father_name': fatherName ?? '',
-      'lmp': lmp?.toIso8601String().split('T')[0] ?? '',
+      'lpm':
+          lmp?.toIso8601String().split('T')[0] ??
+          '', // Note: PHP expects 'lpm' not 'lmp'
       'family_planning': familyPlanning ?? '',
       'delivery_type': deliveryType ?? '',
       'birth_order': birthOrder ?? '',
@@ -106,7 +108,7 @@ class AddChildResponse {
   });
 
   factory AddChildResponse.fromJson(Map<String, dynamic> json) {
-    // Robust success detection
+    // Robust success detection - PHP returns 'status' => 'success' as string
     final statusRaw = json['status'];
     bool success = false;
 
@@ -118,16 +120,27 @@ class AddChildResponse {
     }
 
     // Fallback: if we have meaningful data, consider it successful
+    // PHP endpoint always returns baby_id and total_records_created on success
     if (!success &&
         (json['baby_id'] != null || (json['total_records_created'] ?? 0) > 0)) {
       success = true;
+    }
+
+    // Get child name from child_fname and child_lname if child_name not provided
+    String? childName = json['child_name'];
+    if (childName == null || childName.isEmpty) {
+      final fname = json['child_fname'] ?? '';
+      final lname = json['child_lname'] ?? '';
+      if (fname.isNotEmpty || lname.isNotEmpty) {
+        childName = '$fname $lname'.trim();
+      }
     }
 
     return AddChildResponse(
       success: success,
       message: json['message'] ?? '',
       babyId: json['baby_id'],
-      childName: json['child_name'],
+      childName: childName,
       vaccinesTransferred: json['vaccines_transferred'],
       vaccinesScheduled: json['vaccines_scheduled'],
       totalRecordsCreated: json['total_records_created'],

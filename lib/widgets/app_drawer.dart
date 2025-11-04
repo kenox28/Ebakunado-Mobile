@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_profile_provider.dart';
+import '../providers/dashboard_provider.dart';
+import '../providers/notification_provider.dart';
 import '../utils/constants.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -95,17 +97,6 @@ class AppDrawer extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.vaccines),
-                  title: const Text('Immunization Approvals'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(
-                      context,
-                      AppConstants.immunizationApprovalsRoute,
-                    );
-                  },
-                ),
-                ListTile(
                   leading: const Icon(Icons.settings),
                   title: const Text('Settings'),
                   onTap: () {
@@ -150,11 +141,22 @@ class AppDrawer extends StatelessWidget {
                   style: TextStyle(color: AppConstants.errorRed),
                 ),
                 onTap: () async {
-                  Navigator.pop(context);
+                  // Get all providers BEFORE closing the drawer (to avoid deactivated widget error)
+                  final dashboardProvider = Provider.of<DashboardProvider>(
+                    context,
+                    listen: false,
+                  );
+                  final notificationProvider =
+                      Provider.of<NotificationProvider>(context, listen: false);
+
+                  // Store the context reference before async operations
+                  final navigatorContext = context;
+
+                  Navigator.pop(navigatorContext);
 
                   // Show confirmation dialog
                   final shouldLogout = await showDialog<bool>(
-                    context: context,
+                    context: navigatorContext,
                     builder: (context) => AlertDialog(
                       title: const Text('Logout'),
                       content: const Text('Are you sure you want to logout?'),
@@ -175,11 +177,15 @@ class AppDrawer extends StatelessWidget {
                   );
 
                   if (shouldLogout == true) {
+                    // Clear all cached data
                     await authProvider.logout();
-                    await profileProvider.clearProfile(); // Clear profile data
-                    if (context.mounted) {
+                    await profileProvider.clearProfile();
+                    dashboardProvider.clear();
+                    notificationProvider.clear();
+
+                    if (navigatorContext.mounted) {
                       Navigator.pushNamedAndRemoveUntil(
-                        context,
+                        navigatorContext,
                         AppConstants.loginRoute,
                         (route) => false,
                       );
