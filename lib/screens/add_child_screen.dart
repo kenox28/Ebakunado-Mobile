@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_client.dart';
@@ -8,6 +9,7 @@ import '../models/child_registration_form.dart';
 import '../models/user_profile.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
+import '../utils/vaccine_catalog.dart';
 import '../mixins/animated_alert_mixin.dart';
 
 class AddChildScreen extends StatefulWidget {
@@ -50,27 +52,7 @@ class _AddChildScreenState extends State<AddChildScreen>
   String _birthOrder = 'Single';
   String _birthAttendant = 'Doctor';
   File? _babysCard;
-  List<String> _vaccinesReceived = [];
-
-  // Available vaccines
-  final List<String> _availableVaccines = [
-    'BCG (Tuberculosis)',
-    'HEPAB1 (w/in 24 hrs)',
-    'HEPAB1 (More than 24hrs)',
-    'Pentavalent (DPT-HepB-Hib) - 1st',
-    'OPV - 1st (Oral Polio)',
-    'PCV - 1st (Pneumococcal)',
-    'Rota Virus Vaccine - 1st',
-    'Pentavalent (DPT-HepB-Hib) - 2nd',
-    'OPV - 2nd (Oral Polio)',
-    'PCV - 2nd (Pneumococcal)',
-    'Rota Virus Vaccine - 2nd',
-    'Pentavalent (DPT-HepB-Hib) - 3rd',
-    'OPV - 3rd (Oral Polio)',
-    'PCV - 3rd (Pneumococcal)',
-    'MCV1 (AMV) - Anti-Measles Vaccine',
-    'MCV2 (MMR) - Measles-Mumps-Rubella',
-  ];
+  final Set<String> _vaccinesReceived = {};
 
   @override
   void initState() {
@@ -435,19 +417,19 @@ class _AddChildScreenState extends State<AddChildScreen>
               _buildDropdownField(
                 label: 'Type of Delivery',
                 value: _deliveryType,
-                items: ['Normal', 'Caesarean Section'],
+                items: const ['Normal', 'Caesarean Section'],
                 onChanged: (value) => setState(() => _deliveryType = value!),
               ),
               _buildDropdownField(
                 label: 'Birth Order',
                 value: _birthOrder,
-                items: ['Single', 'Twin'],
+                items: const ['Single', 'Twin'],
                 onChanged: (value) => setState(() => _birthOrder = value!),
               ),
               _buildDropdownField(
                 label: 'Birth Attendant',
                 value: _birthAttendant,
-                items: ['Doctor', 'Midwife', 'Nurse', 'Hilot', 'Other'],
+                items: const ['Doctor', 'Midwife', 'Nurse', 'Hilot', 'Other'],
                 onChanged: (value) => setState(() => _birthAttendant = value!),
               ),
               if (_birthAttendant == 'Other')
@@ -464,7 +446,7 @@ class _AddChildScreenState extends State<AddChildScreen>
 
               const SizedBox(height: 24),
 
-              // Vaccines Already Received
+              // Vaccines Already Received (using VaccineCatalog)
               _buildSectionTitle('Vaccines Already Received'),
               Text(
                 'Select all vaccines your child has already received:',
@@ -714,16 +696,19 @@ class _AddChildScreenState extends State<AddChildScreen>
 
   Widget _buildVaccineCheckboxes() {
     return Column(
-      children: _availableVaccines.map((vaccine) {
+      children: VaccineCatalog.options.map((vaccine) {
         return CheckboxListTile(
-          title: Text(vaccine),
-          value: _vaccinesReceived.contains(vaccine),
+          title: Text(vaccine.displayLabel),
+          subtitle: vaccine.description != null
+              ? Text(vaccine.description!, style: AppConstants.captionStyle)
+              : null,
+          value: _vaccinesReceived.contains(vaccine.payloadName),
           onChanged: (bool? value) {
             setState(() {
               if (value == true) {
-                _vaccinesReceived.add(vaccine);
+                _vaccinesReceived.add(vaccine.payloadName);
               } else {
-                _vaccinesReceived.remove(vaccine);
+                _vaccinesReceived.remove(vaccine.payloadName);
               }
             });
           },
@@ -835,23 +820,13 @@ class _AddChildScreenState extends State<AddChildScreen>
     });
 
     try {
-      final response = await ApiClient.instance.claimChildWithCode(
+      final result = await ApiClient.instance.claimChildWithCode(
         _familyCodeController.text.trim(),
       );
 
-      Map<String, dynamic> responseData;
-      if (response.data is String) {
-        responseData = json.decode(response.data);
-      } else {
-        responseData = response.data;
-      }
-
-      final claimResponse = ClaimChildResponse.fromJson(responseData);
-
-      // Additional safeguard: if we have baby_id, treat as success
-      if (claimResponse.success || claimResponse.babyId != null) {
+      if (result.isSuccess) {
         showSuccessAlert(
-          'Child "${claimResponse.childName}" added successfully! Baby ID: ${claimResponse.babyId}',
+          'Child "${result.childName}" added successfully! Baby ID: ${result.babyId}',
           duration: const Duration(seconds: 3),
         );
         _familyCodeController.clear();
@@ -859,11 +834,14 @@ class _AddChildScreenState extends State<AddChildScreen>
         // Auto-redirect after 3 seconds
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted) {
-            Navigator.pop(context);
+            Navigator.pop(
+              context,
+              true,
+            ); // Return true to indicate refresh needed
           }
         });
       } else {
-        showErrorAlert(claimResponse.message);
+        showErrorAlert(result.message);
       }
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
@@ -885,7 +863,9 @@ class _AddChildScreenState extends State<AddChildScreen>
         showErrorAlert('Failed to claim child. Please try again.');
       }
     } finally {
-      setState(() => _isClaimingChild = false);
+      if (mounted) {
+        setState(() => _isClaimingChild = false);
+      }
     }
   }
 
@@ -908,176 +888,74 @@ class _AddChildScreenState extends State<AddChildScreen>
       final rawAddress = _addressController.text.trim();
       final formattedAddress = _formatAddress(rawAddress);
 
-      // Prepare optional fields - use empty string if empty, null if truly optional
-      final bloodTypeValue = _bloodTypeController.text.trim();
-      final allergiesValue = _allergiesController.text.trim();
-      final familyPlanningValue = _familyPlanningController.text.trim();
-      final birthAttendantOthersValue = _birthAttendantOthersController.text
-          .trim();
-      final placeOfBirthValue = _placeOfBirthController.text.trim();
-      final fatherNameValue = _fatherNameController.text.trim();
+      final dateFormatter = DateFormat('yyyy-MM-dd');
 
-      final formData = ChildRegistrationForm(
+      final request = ChildRegistrationRequest(
         childFname: _childFnameController.text.trim(),
         childLname: _childLnameController.text.trim(),
-        birthDate: _birthDate!,
-        placeOfBirth: placeOfBirthValue.isEmpty ? null : placeOfBirthValue,
-        address: formattedAddress,
+        childGender: _gender,
+        childBirthDate: dateFormatter.format(_birthDate!),
+        childAddress: formattedAddress,
+        placeOfBirth: _placeOfBirthController.text.trim().isEmpty
+            ? null
+            : _placeOfBirthController.text.trim(),
+        motherName: _motherNameController.text.trim().isEmpty
+            ? null
+            : _motherNameController.text.trim(),
+        fatherName: _fatherNameController.text.trim().isEmpty
+            ? null
+            : _fatherNameController.text.trim(),
         birthWeight: _birthWeightController.text.trim().isEmpty
             ? null
-            : double.tryParse(_birthWeightController.text.trim()),
+            : _birthWeightController.text.trim(),
         birthHeight: _birthHeightController.text.trim().isEmpty
             ? null
-            : double.tryParse(_birthHeightController.text.trim()),
-        bloodType: bloodTypeValue.isEmpty ? null : bloodTypeValue,
-        allergies: allergiesValue.isEmpty ? null : allergiesValue,
-        gender: _gender,
-        motherName: _motherNameController.text.trim(),
-        fatherName: fatherNameValue.isEmpty ? null : fatherNameValue,
-        lmp: _lmp, // Can be null, which is fine
-        familyPlanning: familyPlanningValue.isEmpty
-            ? null
-            : familyPlanningValue,
+            : _birthHeightController.text.trim(),
+        birthAttendant: _birthAttendant == 'Other'
+            ? _birthAttendantOthersController.text.trim()
+            : _birthAttendant,
+        birthAttendantOthers: _birthAttendant == 'Other'
+            ? _birthAttendantOthersController.text.trim()
+            : null,
         deliveryType: _deliveryType,
         birthOrder: _birthOrder,
-        birthAttendant: _birthAttendant,
-        birthAttendantOthers: birthAttendantOthersValue.isEmpty
+        bloodType: _bloodTypeController.text.trim().isEmpty
             ? null
-            : birthAttendantOthersValue,
+            : _bloodTypeController.text.trim(),
+        allergies: _allergiesController.text.trim().isEmpty
+            ? null
+            : _allergiesController.text.trim(),
+        lpm: _lmp != null ? dateFormatter.format(_lmp!) : null,
+        familyPlanning: _familyPlanningController.text.trim().isEmpty
+            ? null
+            : _familyPlanningController.text.trim(),
+        vaccinesReceived: _vaccinesReceived.toList(),
+      );
+
+      final result = await ApiClient.instance.requestImmunization(
+        request,
         babysCard: _babysCard,
-        vaccinesReceived: _vaccinesReceived,
       );
 
-      final response = await ApiClient.instance.requestImmunization(
-        formData.toFormData(),
-        _babysCard,
-      );
-
-      // Debug: Log response
-      print('=== Registration Response ===');
-      print('Status Code: ${response.statusCode}');
-      print('Response Data: ${response.data}');
-      print('Response Data Type: ${response.data.runtimeType}');
-      print('===========================');
-
-      Map<String, dynamic> responseData;
-      if (response.data is String) {
-        try {
-          responseData = json.decode(response.data);
-        } catch (e) {
-          print('Failed to parse JSON string: $e');
-          showErrorAlert('Invalid response from server. Please try again.');
-          return;
-        }
-      } else if (response.data is Map) {
-        responseData = Map<String, dynamic>.from(response.data);
-      } else {
-        print('Unexpected response data type: ${response.data.runtimeType}');
-        showErrorAlert('Unexpected response format from server.');
-        return;
-      }
-
-      print('=== Parsed Response Data ===');
-      print(responseData);
-      print('===========================');
-
-      final addChildResponse = AddChildResponse.fromJson(responseData);
-
-      // Check if HTTP status is 200 (successful request)
-      final isHttpSuccess =
-          response.statusCode == 200 || response.statusCode == 201;
-
-      // Check multiple success indicators
-      final hasSuccessStatus = addChildResponse.success == true;
-      final hasBabyId =
-          addChildResponse.babyId != null &&
-          addChildResponse.babyId!.isNotEmpty;
-      final hasRecordsCreated = (addChildResponse.totalRecordsCreated ?? 0) > 0;
-      final messageLower = addChildResponse.message.toLowerCase();
-      final hasSuccessMessage =
-          messageLower.contains('success') ||
-          messageLower.contains('saved') ||
-          messageLower.contains('created') ||
-          messageLower.contains('registered');
-      final hasErrorMessage =
-          messageLower.contains('error') ||
-          messageLower.contains('fail') ||
-          messageLower.contains('invalid');
-
-      print('=== Success Indicators ===');
-      print('HTTP Status: ${response.statusCode}');
-      print('HTTP Success: $isHttpSuccess');
-      print('Response Success: $hasSuccessStatus');
-      print('Has Baby ID: $hasBabyId');
-      print('Has Records Created: $hasRecordsCreated');
-      print('Has Success Message: $hasSuccessMessage');
-      print('Has Error Message: $hasErrorMessage');
-      print('Response Message: ${addChildResponse.message}');
-      print('========================');
-
-      // Improved success detection priority:
-      // 1. HTTP 200/201 AND status: 'success' → DEFINITE SUCCESS
-      // 2. HTTP 200/201 AND has baby_id → SUCCESS
-      // 3. status: 'success' (even with other HTTP codes) → SUCCESS
-      // 4. has baby_id OR records_created → SUCCESS (fallback)
-      final isSuccess =
-          (!hasErrorMessage) &&
-          (
-          // Priority 1: HTTP success + status success
-          (isHttpSuccess && hasSuccessStatus) ||
-              // Priority 2: HTTP success + has baby_id
-              (isHttpSuccess && hasBabyId) ||
-              // Priority 3: Status success (even if HTTP not 200)
-              hasSuccessStatus ||
-              // Priority 4: Has baby_id or records created
-              hasBabyId ||
-              hasRecordsCreated ||
-              // Priority 5: Success message in response
-              hasSuccessMessage);
-
-      if (isSuccess) {
-        // Get child name: Priority 1 = response.child_name, Priority 2 = form data
-        final childName = addChildResponse.childName?.trim().isNotEmpty == true
-            ? addChildResponse.childName!.trim()
+      if (result.isSuccess) {
+        // Get child name from response or form
+        final childName = result.childName?.trim().isNotEmpty == true
+            ? result.childName!.trim()
             : '${_childFnameController.text.trim()} ${_childLnameController.text.trim()}'
                   .trim();
 
-        print('=== Showing Success Alert ===');
-        print('Child Name: $childName');
-        print('============================');
-
-        // Show success snackbar with child name
         if (mounted) {
           _showSuccessSnackbar(childName);
-
-          // Show detailed dialog (will auto-dismiss after 3 seconds)
-          _showSuccessDialog(addChildResponse, childName);
-
-          // Auto-clear form immediately after success
+          _showSuccessDialog(result, childName);
           _resetForm();
         }
       } else {
-        // Show error with more details
-        final errorMsg = addChildResponse.message.isNotEmpty
-            ? addChildResponse.message
+        final errorMsg = result.message.isNotEmpty
+            ? result.message
             : 'Failed to register child. Please check your input and try again.';
-        print('=== Showing Error Alert ===');
-        print('Error Message: $errorMsg');
-        print('==========================');
         showErrorAlert(errorMsg);
       }
     } on DioException catch (e) {
-      // Enhanced error logging for debugging
-      print('=== DioException Details ===');
-      print('Type: ${e.type}');
-      print('Message: ${e.message}');
-      print('Response Status Code: ${e.response?.statusCode}');
-      print('Response Data: ${e.response?.data}');
-      print('Response Data Type: ${e.response?.data.runtimeType}');
-      print('Request Path: ${e.requestOptions.path}');
-      print('Request Data: ${e.requestOptions.data}');
-      print('===========================');
-
       if (e.response?.statusCode == 401) {
         if (mounted) {
           ErrorHandler.handleError(
@@ -1088,180 +966,22 @@ class _AddChildScreenState extends State<AddChildScreen>
         return;
       }
 
-      // Try to parse response even if it's an error status (500, etc.)
-      // Sometimes the child is added successfully but server returns error status
-      Map<String, dynamic>? errorResponseData;
-      bool isEmptyResponse = false;
-
+      String errorMessage = 'Network error. Please try again.';
       if (e.response?.data != null) {
         try {
+          Map<String, dynamic> errorData;
           if (e.response!.data is String) {
-            final dataString = e.response!.data as String;
-            // Check if response is empty or whitespace
-            if (dataString.trim().isEmpty) {
-              isEmptyResponse = true;
-              print(
-                'Response body is empty - server may have failed after successful insert',
-              );
-            } else {
-              // Try to parse JSON string
-              errorResponseData = json.decode(dataString);
-            }
-          } else if (e.response!.data is Map) {
-            // Already a Map, convert to Map<String, dynamic>
-            errorResponseData = Map<String, dynamic>.from(e.response!.data);
+            errorData = json.decode(e.response!.data);
+          } else {
+            errorData = e.response!.data;
           }
-        } catch (parseError) {
-          print('Failed to parse error response: $parseError');
-          // If it's a format exception and response was not empty, mark as empty
-          if (parseError.toString().contains('Unexpected end of input')) {
-            isEmptyResponse = true;
+          if (errorData['message'] != null) {
+            errorMessage = errorData['message'].toString();
           }
-        }
-      } else {
-        // No response data at all
-        isEmptyResponse = true;
+        } catch (_) {}
       }
-
-      // Handle empty response: If request was valid and we got 500 with empty body,
-      // the child might still have been added (since insert happens before response)
-      if (isEmptyResponse && e.response?.statusCode == 500) {
-        // Check if form was valid (all required fields were filled)
-        final hasRequiredFields =
-            _childFnameController.text.trim().isNotEmpty &&
-            _childLnameController.text.trim().isNotEmpty &&
-            _birthDate != null &&
-            _addressController.text.trim().isNotEmpty &&
-            _motherNameController.text.trim().isNotEmpty &&
-            _babysCard != null;
-
-        if (hasRequiredFields) {
-          // Form was valid, child likely added successfully
-          // Show success with child name from form
-          final childName =
-              '${_childFnameController.text.trim()} ${_childLnameController.text.trim()}'
-                  .trim();
-
-          print('=== Empty Response - Assuming Success ===');
-          print('Child Name: $childName');
-          print('Form was valid, assuming child was added');
-          print('========================================');
-
-          if (mounted) {
-            // Create a mock success response
-            final mockResponse = AddChildResponse(
-              success: true,
-              message: 'Child health record saved successfully',
-              babyId: null, // Unknown but that's okay
-              childName: childName,
-              vaccinesTransferred: _vaccinesReceived.length,
-              vaccinesScheduled: 0, // Unknown
-              totalRecordsCreated: null,
-              uploadStatus: 'unknown',
-            );
-
-            _showSuccessSnackbar(childName);
-            _showSuccessDialog(mockResponse, childName);
-            _resetForm();
-          }
-          return; // Exit early - success handled
-        }
-      }
-
-      // Check if error response contains success indicators
-      if (errorResponseData != null) {
-        try {
-          final errorAddChildResponse = AddChildResponse.fromJson(
-            errorResponseData,
-          );
-
-          // Check for success indicators even in error response
-          final hasBabyId =
-              errorAddChildResponse.babyId != null &&
-              errorAddChildResponse.babyId!.isNotEmpty;
-          final hasRecordsCreated =
-              (errorAddChildResponse.totalRecordsCreated ?? 0) > 0;
-          final hasSuccessStatus = errorAddChildResponse.success == true;
-          final messageLower = errorAddChildResponse.message.toLowerCase();
-          final hasSuccessMessage =
-              messageLower.contains('success') ||
-              messageLower.contains('saved') ||
-              messageLower.contains('created');
-          final hasErrorMessage =
-              messageLower.contains('error') ||
-              messageLower.contains('fail') ||
-              messageLower.contains('invalid');
-
-          print('=== Error Response Success Check ===');
-          print('Has Baby ID: $hasBabyId');
-          print('Has Records Created: $hasRecordsCreated');
-          print('Has Success Status: $hasSuccessStatus');
-          print('Has Success Message: $hasSuccessMessage');
-          print('Has Error Message: $hasErrorMessage');
-          print('===================================');
-
-          // If we find success indicators and no error message, treat as success!
-          if (!hasErrorMessage &&
-              (hasBabyId ||
-                  hasRecordsCreated ||
-                  hasSuccessStatus ||
-                  hasSuccessMessage)) {
-            // Get child name: Priority 1 = response.child_name, Priority 2 = form data
-            final childName =
-                errorAddChildResponse.childName?.trim().isNotEmpty == true
-                ? errorAddChildResponse.childName!.trim()
-                : '${_childFnameController.text.trim()} ${_childLnameController.text.trim()}'
-                      .trim();
-
-            print('=== Treating Error Response as Success ===');
-            print('Child Name: $childName');
-            print('==========================================');
-
-            // Show success snackbar with child name
-            if (mounted) {
-              _showSuccessSnackbar(childName);
-
-              // Show detailed dialog (will auto-dismiss after 3 seconds)
-              _showSuccessDialog(errorAddChildResponse, childName);
-
-              // Auto-clear form immediately after success
-              _resetForm();
-            }
-            return; // Exit early - success handled
-          }
-        } catch (parseError) {
-          print(
-            'Failed to parse error response as AddChildResponse: $parseError',
-          );
-        }
-      }
-
-      // No success indicators found, show error
-      String errorMessage = 'Network error. Please try again.';
-
-      if (errorResponseData != null) {
-        // Safely extract error message from parsed response
-        if (errorResponseData['message'] != null) {
-          errorMessage = errorResponseData['message'].toString();
-        } else if (errorResponseData['error'] != null) {
-          errorMessage = errorResponseData['error'].toString();
-        }
-      } else if (e.message != null) {
-        errorMessage = e.message!;
-      }
-
-      print('=== Showing Error Alert ===');
-      print('Error Message: $errorMessage');
-      print('===========================');
       showErrorAlert(errorMessage);
     } catch (e) {
-      // Enhanced error logging for other exceptions
-      print('=== Exception Details ===');
-      print('Type: ${e.runtimeType}');
-      print('Message: ${e.toString()}');
-      print('Stack Trace: ${StackTrace.current}');
-      print('========================');
-
       if (e is AuthExpiredException) {
         if (mounted) {
           ErrorHandler.handleError(context, e);
@@ -1270,7 +990,9 @@ class _AddChildScreenState extends State<AddChildScreen>
         showErrorAlert('Failed to register child: ${e.toString()}');
       }
     } finally {
-      setState(() => _isRegisteringChild = false);
+      if (mounted) {
+        setState(() => _isRegisteringChild = false);
+      }
     }
   }
 
@@ -1302,9 +1024,7 @@ class _AddChildScreenState extends State<AddChildScreen>
           margin: const EdgeInsets.all(16),
         ),
       );
-      print('=== Snackbar shown successfully ===');
     } catch (e) {
-      print('=== Error showing snackbar: $e ===');
       // Fallback: Show as dialog if snackbar fails
       showDialog(
         context: context,
@@ -1328,16 +1048,16 @@ class _AddChildScreenState extends State<AddChildScreen>
     }
   }
 
-  void _showSuccessDialog(AddChildResponse response, String childName) {
+  void _showSuccessDialog(ChildRegistrationResult response, String childName) {
     showDialog(
       context: context,
       barrierDismissible: true,
       builder: (context) => AlertDialog(
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.check_circle, color: AppConstants.successGreen),
-            const SizedBox(width: 8),
-            const Text('Success!'),
+            Icon(Icons.check_circle, color: AppConstants.successGreen),
+            SizedBox(width: 8),
+            Text('Success!'),
           ],
         ),
         content: Column(
@@ -1346,34 +1066,31 @@ class _AddChildScreenState extends State<AddChildScreen>
           children: [
             Text('Child: $childName'),
             const SizedBox(height: 8),
-            Text('Child health record saved successfully!'),
+            const Text('Child health record saved successfully!'),
             const SizedBox(height: 16),
             if (response.babyId != null) Text('Baby ID: ${response.babyId}'),
             if (response.babyId != null) const SizedBox(height: 8),
-            if (response.totalRecordsCreated != null)
+            if (response.totalRecordsCreated > 0)
               Text(
                 'Total vaccine records created: ${response.totalRecordsCreated}',
               ),
-            if (response.totalRecordsCreated != null) const SizedBox(height: 8),
-            if (response.vaccinesTransferred != null)
-              Text('Vaccines taken: ${response.vaccinesTransferred}'),
-            if (response.vaccinesTransferred != null) const SizedBox(height: 8),
-            if (response.vaccinesScheduled != null)
-              Text('Vaccines scheduled: ${response.vaccinesScheduled}'),
+            if (response.totalRecordsCreated > 0) const SizedBox(height: 8),
+            Text('Vaccines taken: ${response.vaccinesTransferred}'),
+            const SizedBox(height: 8),
+            Text('Vaccines scheduled: ${response.vaccinesScheduled}'),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Go back to previous screen
+              Navigator.pop(context, true); // Go back with refresh flag
             },
             child: const Text('Go to Children List'),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              // Form already cleared, so just keep it that way
             },
             child: const Text('Add Another Child'),
           ),
@@ -1381,8 +1098,8 @@ class _AddChildScreenState extends State<AddChildScreen>
       ),
     );
 
-    // Auto-dismiss dialog after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
+    // Auto-dismiss dialog after 5 seconds
+    Future.delayed(const Duration(seconds: 5), () {
       if (mounted && Navigator.canPop(context)) {
         Navigator.pop(context);
       }
@@ -1403,7 +1120,6 @@ class _AddChildScreenState extends State<AddChildScreen>
     }
 
     // If no commas, format spaces to comma-separated
-    // Split by multiple spaces, trim each part, filter empty, join with commas
     final parts = address
         .split(RegExp(r'\s+'))
         .map((part) => part.trim())
@@ -1437,26 +1153,18 @@ class _AddChildScreenState extends State<AddChildScreen>
       _childFnameController.clear();
       _childLnameController.clear();
       _placeOfBirthController.clear();
-      // Reset address but don't clear if it was pre-filled from profile
-      _addressController.clear();
-      if (_userProfile?.place != null && _userProfile!.place!.isNotEmpty) {
-        _addressController.text = _userProfile!.place!;
+      // Keep pre-filled address from profile
+      if (_userProfile?.place == null || _userProfile!.place!.isEmpty) {
+        _addressController.clear();
       }
       _birthWeightController.clear();
       _birthHeightController.clear();
       _bloodTypeController.clear();
       _allergiesController.clear();
-      // Reset parent names but restore if they match user's gender
-      _motherNameController.clear();
-      _fatherNameController.clear();
-      if (_userProfile != null && _userProfile!.gender != null) {
-        final gender = _userProfile!.gender!.toLowerCase();
-        final fullName = _userProfile!.fullName;
-        if (gender == 'female' || gender == 'f') {
-          _motherNameController.text = fullName;
-        } else if (gender == 'male' || gender == 'm') {
-          _fatherNameController.text = fullName;
-        }
+      // Keep pre-filled parent names from profile
+      if (_userProfile == null || _userProfile!.gender == null) {
+        _motherNameController.clear();
+        _fatherNameController.clear();
       }
       _familyPlanningController.clear();
       _birthAttendantOthersController.clear();

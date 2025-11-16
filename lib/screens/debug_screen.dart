@@ -362,19 +362,6 @@ Check the console logs for detailed debugging information.
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               child: const Text('Test App Login Flow'),
             ),
-            const SizedBox(height: 8),
-
-            // Notification Test Button
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/notification_test');
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppConstants.mediumGreen,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Test Notifications'),
-            ),
             const SizedBox(height: 16),
 
             if (_isLoading)

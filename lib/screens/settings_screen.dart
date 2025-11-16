@@ -136,6 +136,17 @@ class _SettingsScreenState extends State<SettingsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Notifications & Permissions entry
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.settings_applications),
+                title: const Text('Notifications & Permissions'),
+                subtitle: const Text('Set daily time and open phone settings'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pushNamed(context, '/app-notifications'),
+              ),
+            ),
+
             // Profile Header Section
             _buildProfileHeader(),
 

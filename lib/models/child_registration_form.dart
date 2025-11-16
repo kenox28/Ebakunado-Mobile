@@ -1,189 +1,157 @@
-import 'dart:io';
+import '../utils/vaccine_catalog.dart';
 
-class ChildRegistrationForm {
+class ChildRegistrationRequest {
   final String childFname;
   final String childLname;
-  final DateTime birthDate;
+  final String childGender;
+  final String childBirthDate;
+  final String childAddress;
   final String? placeOfBirth;
-  final String address;
-  final double? birthWeight;
-  final double? birthHeight;
-  final String? bloodType;
-  final String? allergies;
-  final String gender; // 'Male' or 'Female'
-  final String motherName;
+  final String? motherName;
   final String? fatherName;
-  final DateTime? lmp;
-  final String? familyPlanning;
-  final String? deliveryType;
-  final String? birthOrder;
+  final String? birthWeight;
+  final String? birthHeight;
   final String? birthAttendant;
   final String? birthAttendantOthers;
-  final File? babysCard;
+  final String? deliveryType;
+  final String? birthOrder;
+  final String? bloodType;
+  final String? allergies;
+  final String? lpm;
+  final String? familyPlanning;
   final List<String> vaccinesReceived;
 
-  ChildRegistrationForm({
+  const ChildRegistrationRequest({
     required this.childFname,
     required this.childLname,
-    required this.birthDate,
+    required this.childGender,
+    required this.childBirthDate,
+    required this.childAddress,
     this.placeOfBirth,
-    required this.address,
+    this.motherName,
+    this.fatherName,
     this.birthWeight,
     this.birthHeight,
-    this.bloodType,
-    this.allergies,
-    required this.gender,
-    required this.motherName,
-    this.fatherName,
-    this.lmp,
-    this.familyPlanning,
-    this.deliveryType,
-    this.birthOrder,
     this.birthAttendant,
     this.birthAttendantOthers,
-    this.babysCard,
-    required this.vaccinesReceived,
+    this.deliveryType,
+    this.birthOrder,
+    this.bloodType,
+    this.allergies,
+    this.lpm,
+    this.familyPlanning,
+    this.vaccinesReceived = const [],
   });
 
-  Map<String, dynamic> toFormData() {
-    final Map<String, dynamic> formData = {
+  Map<String, dynamic> toFormMap() {
+    final map = <String, dynamic>{
       'child_fname': childFname,
       'child_lname': childLname,
-      'child_birth_date': birthDate.toIso8601String().split(
-        'T',
-      )[0], // YYYY-MM-DD format
-      'place_of_birth': placeOfBirth ?? '',
-      'child_address': address,
-      'birth_weight': birthWeight?.toString() ?? '',
-      'birth_height': birthHeight?.toString() ?? '',
-      'blood_type': bloodType ?? '',
-      'allergies': allergies ?? '',
-      'child_gender': gender,
-      'mother_name': motherName,
-      'father_name': fatherName ?? '',
-      'lpm':
-          lmp?.toIso8601String().split('T')[0] ??
-          '', // Note: PHP expects 'lpm' not 'lmp'
-      'family_planning': familyPlanning ?? '',
-      'delivery_type': deliveryType ?? '',
-      'birth_order': birthOrder ?? '',
-      'birth_attendant': birthAttendant ?? '',
-      'birth_attendant_others': birthAttendantOthers ?? '',
-      'vaccines_received': vaccinesReceived.join(','),
+      'child_gender': childGender,
+      'child_birth_date': childBirthDate,
+      'child_address': childAddress,
     };
 
-    return formData;
-  }
-}
-
-class ClaimChildRequest {
-  final String familyCode;
-
-  ClaimChildRequest({required this.familyCode});
-
-  Map<String, dynamic> toFormData() {
-    return {'family_code': familyCode};
-  }
-}
-
-class AddChildResponse {
-  final bool success;
-  final String message;
-  final String? babyId;
-  final String? childName;
-  final int? vaccinesTransferred;
-  final int? vaccinesScheduled;
-  final int? totalRecordsCreated;
-  final String? uploadStatus;
-
-  AddChildResponse({
-    required this.success,
-    required this.message,
-    this.babyId,
-    this.childName,
-    this.vaccinesTransferred,
-    this.vaccinesScheduled,
-    this.totalRecordsCreated,
-    this.uploadStatus,
-  });
-
-  factory AddChildResponse.fromJson(Map<String, dynamic> json) {
-    // Robust success detection - PHP returns 'status' => 'success' as string
-    final statusRaw = json['status'];
-    bool success = false;
-
-    if (statusRaw == true || statusRaw == 1) {
-      success = true;
-    } else if (statusRaw is String) {
-      final statusLower = statusRaw.trim().toLowerCase();
-      success = statusLower == 'success' || statusLower == 'ok';
-    }
-
-    // Fallback: if we have meaningful data, consider it successful
-    // PHP endpoint always returns baby_id and total_records_created on success
-    if (!success &&
-        (json['baby_id'] != null || (json['total_records_created'] ?? 0) > 0)) {
-      success = true;
-    }
-
-    // Get child name from child_fname and child_lname if child_name not provided
-    String? childName = json['child_name'];
-    if (childName == null || childName.isEmpty) {
-      final fname = json['child_fname'] ?? '';
-      final lname = json['child_lname'] ?? '';
-      if (fname.isNotEmpty || lname.isNotEmpty) {
-        childName = '$fname $lname'.trim();
+    void addIfPresent(String key, String? value) {
+      if (value != null && value.trim().isNotEmpty) {
+        map[key] = value.trim();
       }
     }
 
-    return AddChildResponse(
-      success: success,
-      message: json['message'] ?? '',
-      babyId: json['baby_id'],
-      childName: childName,
-      vaccinesTransferred: json['vaccines_transferred'],
-      vaccinesScheduled: json['vaccines_scheduled'],
-      totalRecordsCreated: json['total_records_created'],
-      uploadStatus: json['upload_status'],
+    addIfPresent('place_of_birth', placeOfBirth);
+    addIfPresent('mother_name', motherName);
+    addIfPresent('father_name', fatherName);
+    addIfPresent('birth_weight', birthWeight);
+    addIfPresent('birth_height', birthHeight);
+    addIfPresent('birth_attendant', birthAttendant);
+    addIfPresent('birth_attendant_others', birthAttendantOthers);
+    addIfPresent('delivery_type', deliveryType);
+    addIfPresent('birth_order', birthOrder);
+    addIfPresent('blood_type', bloodType);
+    addIfPresent('allergies', allergies);
+    addIfPresent('lpm', lpm);
+    addIfPresent('family_planning', familyPlanning);
+
+    final normalizedVaccines = VaccineCatalog.normalizeOutgoingSelections(
+      vaccinesReceived,
+    );
+    if (normalizedVaccines.isNotEmpty) {
+      map['vaccines_received[]'] = normalizedVaccines;
+    }
+
+    return map;
+  }
+}
+
+class ChildRegistrationResult {
+  final String status;
+  final String message;
+  final String? uploadStatus;
+  final Map<String, dynamic>? cloudinaryInfo;
+  final String? babyId;
+  final String? childName;
+  final int vaccinesTransferred;
+  final int vaccinesScheduled;
+  final int totalRecordsCreated;
+
+  const ChildRegistrationResult({
+    required this.status,
+    required this.message,
+    this.uploadStatus,
+    this.cloudinaryInfo,
+    this.babyId,
+    this.childName,
+    this.vaccinesTransferred = 0,
+    this.vaccinesScheduled = 0,
+    this.totalRecordsCreated = 0,
+  });
+
+  bool get isSuccess => status.toLowerCase() == 'success';
+
+  factory ChildRegistrationResult.fromJson(Map<String, dynamic> json) {
+    int _parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      return int.tryParse(value.toString()) ?? 0;
+    }
+
+    return ChildRegistrationResult(
+      status: json['status']?.toString() ?? 'error',
+      message: json['message']?.toString() ?? 'Unknown error',
+      uploadStatus: json['upload_status']?.toString(),
+      cloudinaryInfo: json['cloudinary_info'] is Map<String, dynamic>
+          ? json['cloudinary_info'] as Map<String, dynamic>
+          : null,
+      babyId: json['baby_id']?.toString(),
+      childName: json['child_name']?.toString(),
+      vaccinesTransferred: _parseInt(json['vaccines_transferred']),
+      vaccinesScheduled: _parseInt(json['vaccines_scheduled']),
+      totalRecordsCreated: _parseInt(json['total_records_created']),
     );
   }
 }
 
-class ClaimChildResponse {
-  final bool success;
+class ClaimChildResult {
+  final String status;
   final String message;
-  final String? babyId;
   final String? childName;
+  final String? babyId;
 
-  ClaimChildResponse({
-    required this.success,
+  const ClaimChildResult({
+    required this.status,
     required this.message,
-    this.babyId,
     this.childName,
+    this.babyId,
   });
 
-  factory ClaimChildResponse.fromJson(Map<String, dynamic> json) {
-    // Robust success detection
-    final statusRaw = json['status'];
-    bool success = false;
+  bool get isSuccess => status.toLowerCase() == 'success';
 
-    if (statusRaw == true || statusRaw == 1) {
-      success = true;
-    } else if (statusRaw is String) {
-      final statusLower = statusRaw.trim().toLowerCase();
-      success = statusLower == 'success' || statusLower == 'ok';
-    }
-
-    // Fallback: if we have baby_id, consider it successful
-    if (!success && json['baby_id'] != null) {
-      success = true;
-    }
-
-    return ClaimChildResponse(
-      success: success,
-      message: json['message'] ?? '',
-      babyId: json['baby_id'],
-      childName: json['child_name'],
+  factory ClaimChildResult.fromJson(Map<String, dynamic> json) {
+    return ClaimChildResult(
+      status: json['status']?.toString() ?? 'error',
+      message: json['message']?.toString() ?? 'Unknown error',
+      childName: json['child_name']?.toString(),
+      babyId: json['baby_id']?.toString(),
     );
   }
 }

@@ -59,13 +59,16 @@ dependencies:
   # Permission handling
   permission_handler: ^11.3.1
   device_info_plus: ^9.1.2
+  app_settings: ^5.1.1
 
   # Image picker for file uploads
   image_picker: ^1.0.7
+  file_picker: ^8.1.2
 
   # Notifications
   flutter_local_notifications: ^19.0.0
   timezone: ^0.10.1
+  # workmanager: ^0.5.2  # Temporarily disabled due to compatibility issues
 
   # Supabase
   supabase_flutter: ^2.0.0
@@ -75,6 +78,10 @@ dependencies:
 
   # Country picker for phone numbers
   country_picker: ^2.0.20
+
+  # PDF generation for Baby Card
+  pdf: ^3.10.7
+  printing: ^5.12.0
 
 dev_dependencies:
   flutter_test:

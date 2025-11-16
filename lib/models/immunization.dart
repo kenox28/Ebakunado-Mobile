@@ -1,3 +1,5 @@
+import '../utils/vaccine_catalog.dart';
+
 class ImmunizationItem {
   final int id;
   final String babyId;
@@ -8,6 +10,9 @@ class ImmunizationItem {
   final String? catchUpDate;
   final String? dateGiven;
   final String status;
+  final String originalVaccineName;
+  final VaccineDoseInfo doseInfo;
+  final bool isSuppressed;
 
   ImmunizationItem({
     required this.id,
@@ -19,19 +24,31 @@ class ImmunizationItem {
     this.catchUpDate,
     this.dateGiven,
     required this.status,
+    required this.originalVaccineName,
+    required this.doseInfo,
+    this.isSuppressed = false,
   });
 
   factory ImmunizationItem.fromJson(Map<String, dynamic> json) {
+    final rawName = json['vaccine_name']?.toString() ?? '';
+    final normalizedName = VaccineCatalog.normalizeIncomingName(rawName);
+    final doseInfo = VaccineCatalog.describeDose(normalizedName ?? rawName);
+
     return ImmunizationItem(
       id: json['id'] ?? 0,
       babyId: json['baby_id'] ?? '',
       childName: json['child_name'] ?? '',
-      vaccineName: json['vaccine_name'] ?? '',
+      vaccineName: normalizedName ?? rawName,
       doseNumber: json['dose_number'] ?? 0,
       scheduleDate: json['schedule_date'] ?? '',
       catchUpDate: json['catch_up_date'],
       dateGiven: json['date_given'],
       status: json['status'] ?? '',
+      originalVaccineName: rawName,
+      doseInfo: doseInfo,
+      isSuppressed:
+          normalizedName == null &&
+          VaccineCatalog.shouldIgnoreLegacyName(rawName),
     );
   }
 
@@ -46,6 +63,7 @@ class ImmunizationItem {
       'catch_up_date': catchUpDate,
       'date_given': dateGiven,
       'status': status,
+      'original_vaccine_name': originalVaccineName,
     };
   }
 
@@ -73,10 +91,21 @@ class ImmunizationItem {
   }
 
   // Helper to format dose display
-  String get doseDisplay => 'Dose $doseNumber';
+  String get doseDisplay {
+    if (doseInfo.seriesDose != null) {
+      final total = doseInfo.totalDoses;
+      if (total > 0) {
+        return 'Dose ${doseInfo.seriesDose} of $total';
+      }
+      return 'Dose ${doseInfo.seriesDose}';
+    }
+    return doseNumber > 0 ? 'Dose $doseNumber' : 'Dose';
+  }
 
   // Helper to format vaccine with dose
-  String get vaccineWithDose => '$vaccineName ($doseDisplay)';
+  String get vaccineWithDose => doseInfo.seriesWithDose;
+
+  bool get shouldDisplay => !isSuppressed;
 }
 
 class ImmunizationScheduleResponse {
@@ -91,6 +120,7 @@ class ImmunizationScheduleResponse {
       data:
           (json['data'] as List<dynamic>?)
               ?.map((item) => ImmunizationItem.fromJson(item))
+              .where((item) => item.shouldDisplay)
               .toList() ??
           [],
     );
@@ -98,7 +128,9 @@ class ImmunizationScheduleResponse {
 
   // Helper to filter by baby ID
   List<ImmunizationItem> getForBaby(String babyId) {
-    return data.where((item) => item.babyId == babyId).toList();
+    return data
+        .where((item) => item.babyId == babyId && item.shouldDisplay)
+        .toList();
   }
 
   // Helper to get upcoming immunizations for a baby

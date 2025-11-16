@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String baseUrl =
-      'http://192.168.43.73/ebakunado'; // Website server - all endpoints point here
+      'http://192.168.43.73/ebakunado/'; // Website server - all endpoints point here
+  // 'https://mediumturquoise-porcupine-694169.hostingersite.com/Ebakunado/'; // Website server - all endpoints point here
 
+  // http://192.168.43.73/ebakunado/
   static const String apiKey = 'MY_SECRET_KEY';
   static const int requestTimeout = 30; // seconds
 
@@ -49,6 +51,8 @@ class AppConstants {
       '/php/supabase/users/get_chr_doc_status.php';
   static const String getMyChrRequestsEndpoint =
       '/php/supabase/users/get_my_chr_requests.php';
+  static const String downloadChrDocEndpoint =
+      '/php/supabase/users/download_chr_doc.php';
 
   // Immunization Approval Endpoints
   static const String getImmunizationApprovalsEndpoint =
@@ -62,6 +66,14 @@ class AppConstants {
       '/php/supabase/users/claim_child_with_code.php';
   static const String requestImmunizationEndpoint =
       '/php/supabase/users/request_immunization.php';
+
+  // Baby Card PDF Generation Endpoints
+  static const String getBabyCardLayoutEndpoint =
+      '/php/supabase/users/get_babycard_layout.php';
+  static const String getBabyCardBackgroundEndpoint =
+      '/assets/images/babycard.jpg';
+  static const String getMyImmunizationRecordsEndpoint =
+      '/php/supabase/users/get_my_immunization_records.php';
 
   // Settings/Profile Endpoints
   static const String getProfileDataEndpoint =
@@ -135,7 +147,6 @@ class AppConstants {
   static const String immunizationApprovalsRoute = '/immunization_approvals';
   static const String upcomingScheduleRoute = '/upcoming_schedule';
   static const String childRecordRoute = '/child_record';
-  static const String addChildRoute = '/add_child';
   static const String myChildrenRoute = '/my_children';
   static const String chrRequestsRoute = '/chr_requests';
   static const String settingsRoute = '/settings';

@@ -1,22 +1,25 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/api_client.dart';
 import '../models/chr_requests.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 
-class ChrRequestsScreen extends StatefulWidget {
-  const ChrRequestsScreen({super.key});
+class ApprovedRequestsScreen extends StatefulWidget {
+  const ApprovedRequestsScreen({super.key});
 
   @override
-  State<ChrRequestsScreen> createState() => _ChrRequestsScreenState();
+  State<ApprovedRequestsScreen> createState() => _ApprovedRequestsScreenState();
 }
 
-class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
-  List<ChrRequest> _chrRequests = [];
+class _ApprovedRequestsScreenState extends State<ApprovedRequestsScreen> {
+  List<ChrRequest> _approvedRequests = [];
   bool _isLoading = true;
   String? _error;
   Set<int> _downloadingRequests = {};
@@ -24,10 +27,10 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadChrRequests();
+    _loadApprovedRequests();
   }
 
-  Future<void> _loadChrRequests() async {
+  Future<void> _loadApprovedRequests() async {
     setState(() {
       _isLoading = true;
       _error = null;
@@ -47,12 +50,12 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
 
       if (chrRequestsResponse.status == 'success') {
         setState(() {
-          _chrRequests = chrRequestsResponse.data;
+          _approvedRequests = chrRequestsResponse.data;
           _isLoading = false;
         });
       } else {
         setState(() {
-          _error = 'Failed to load CHR requests';
+          _error = 'Failed to load approved requests';
           _isLoading = false;
         });
       }
@@ -77,36 +80,88 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
         }
       } else {
         setState(() {
-          _error = 'Failed to load CHR requests. Please try again.';
+          _error = 'Failed to load approved requests. Please try again.';
           _isLoading = false;
         });
       }
     }
   }
 
-  Future<void> _downloadDocument(ChrRequest chrRequest) async {
+  Future<void> _generateAndDownloadBabyCard(ChrRequest request) async {
+    if (_downloadingRequests.contains(request.id)) {
+      return; // Already downloading
+    }
+
+    // Check if request is approved and has doc_url
+    if (!request.isApproved || request.docUrl.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Document not available yet. Please wait for approval.',
+            ),
+            backgroundColor: AppConstants.errorRed,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
-      _downloadingRequests.add(chrRequest.id);
+      _downloadingRequests.add(request.id);
     });
 
     try {
-      debugPrint('Starting download for: ${chrRequest.getFileName()}');
-      final result = await ApiClient.instance.downloadChrDocument(chrRequest);
+      debugPrint('Downloading Baby Card from: ${request.docUrl}');
 
-      if (result.success) {
-        if (mounted) {
-          debugPrint('Download successful: ${result.filePath}');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Document downloaded: ${chrRequest.getFileName()}'),
-              backgroundColor: AppConstants.successGreen,
-              action: SnackBarAction(
-                label: 'Open',
-                textColor: Colors.white,
-                onPressed: () async {
-                  try {
-                    await OpenFilex.open(result.filePath!);
-                  } catch (e) {
+      // Show loading dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Expanded(child: Text('Downloading Baby Card...')),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // Download pre-generated Baby Card PDF directly from Cloudinary
+      final pdfBytes = await ApiClient.instance.downloadBabyCardFromUrl(
+        request.docUrl,
+      );
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      // Save PDF
+      final filePath = await _savePdf(pdfBytes, request.childName);
+
+      debugPrint('Baby Card saved to: $filePath');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Baby Card downloaded: ${_getFileName(request.childName)}',
+            ),
+            backgroundColor: AppConstants.successGreen,
+            action: SnackBarAction(
+              label: 'Open',
+              textColor: Colors.white,
+              onPressed: () async {
+                try {
+                  await OpenFilex.open(filePath);
+                } catch (e) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Failed to open file: $e'),
@@ -114,71 +169,89 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
                       ),
                     );
                   }
-                },
-              ),
+                }
+              },
             ),
-          );
-        }
-      } else {
-        if (mounted) {
-          debugPrint('Download failed: ${result.errorMessage}');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result.errorMessage ??
-                    'Download failed. Please check storage permissions.',
-              ),
-              backgroundColor: AppConstants.errorRed,
-              action: result.errorMessage?.contains('permission') == true
-                  ? SnackBarAction(
-                      label: 'Settings',
-                      textColor: Colors.white,
-                      onPressed: () async {
-                        await openAppSettings();
-                      },
-                    )
-                  : null,
-              duration: const Duration(
-                seconds: 6,
-              ), // Longer duration for permission messages
-            ),
-          );
-        }
+          ),
+        );
       }
     } catch (e) {
-      debugPrint('Download exception: $e');
+      debugPrint('Baby Card download error: $e');
+
+      // Close loading dialog if open
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Download failed: ${e.toString()}. Please check storage permissions.',
-            ),
+            content: Text('Failed to download Baby Card: ${e.toString()}'),
             backgroundColor: AppConstants.errorRed,
             action: SnackBarAction(
-              label: 'Settings',
+              label: 'Retry',
               textColor: Colors.white,
-              onPressed: () async {
-                await openAppSettings();
-              },
+              onPressed: () => _generateAndDownloadBabyCard(request),
             ),
-            duration: const Duration(
-              seconds: 6,
-            ), // Longer duration for permission messages
+            duration: const Duration(seconds: 6),
           ),
         );
       }
     } finally {
-      setState(() {
-        _downloadingRequests.remove(chrRequest.id);
-      });
+      if (mounted) {
+        setState(() {
+          _downloadingRequests.remove(request.id);
+        });
+      }
     }
+  }
+
+  Future<String> _savePdf(Uint8List pdfBytes, String childName) async {
+    // Request storage permission if needed
+    if (Platform.isAndroid) {
+      final status = await Permission.storage.request();
+      if (!status.isGranted) {
+        throw Exception('Storage permission denied');
+      }
+    }
+
+    // Get downloads directory
+    Directory? directory;
+    if (Platform.isAndroid) {
+      directory = await getExternalStorageDirectory();
+      // Navigate to Downloads folder
+      if (directory != null) {
+        final downloadsPath = directory.path.split('Android')[0] + 'Download';
+        directory = Directory(downloadsPath);
+        if (!await directory.exists()) {
+          directory = await getApplicationDocumentsDirectory();
+        }
+      }
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+
+    final fileName = _getFileName(childName);
+    final file = File('${directory!.path}/$fileName');
+    await file.writeAsBytes(pdfBytes);
+
+    return file.path;
+  }
+
+  String _getFileName(String childName) {
+    // Sanitize child name for filename
+    final safeName = childName
+        .replaceAll(RegExp(r'[^\w\s]+'), '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .trim();
+    return 'BabyCard_${safeName.isEmpty ? 'Child' : safeName}.pdf';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CHR Requests'),
+        title: const Text('Approved Requests'),
         backgroundColor: AppConstants.primaryGreen,
         foregroundColor: Colors.white,
       ),
@@ -205,7 +278,7 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadChrRequests,
+              onPressed: _loadApprovedRequests,
               child: const Text('Retry'),
             ),
           ],
@@ -213,19 +286,19 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
       );
     }
 
-    if (_chrRequests.isEmpty) {
+    if (_approvedRequests.isEmpty) {
       return _buildEmptyState();
     }
 
     return RefreshIndicator(
-      onRefresh: _loadChrRequests,
+      onRefresh: _loadApprovedRequests,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Approved CHR Documents (${_chrRequests.length})',
+              'Approved Baby Cards (${_approvedRequests.length})',
               style: AppConstants.subheadingStyle,
             ),
             const SizedBox(height: 16),
@@ -245,9 +318,9 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
           children: [
             Icon(Icons.description_outlined, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'No approved requests yet',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: AppConstants.textPrimary,
@@ -256,7 +329,7 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Approved CHR documents will appear here\n\nNote: For Android 13+, you may need to enable "All files access" in app settings to download certificates.',
+              'Approved Baby Card requests will appear here',
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
@@ -268,7 +341,7 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
 
   Widget _buildRequestsTable() {
     return Column(
-      children: _chrRequests.map((request) {
+      children: _approvedRequests.map((request) {
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
           elevation: AppConstants.cardElevation,
@@ -392,7 +465,9 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
     final isDownloading = _downloadingRequests.contains(request.id);
 
     return ElevatedButton.icon(
-      onPressed: isDownloading ? null : () => _downloadDocument(request),
+      onPressed: isDownloading
+          ? null
+          : () => _generateAndDownloadBabyCard(request),
       icon: isDownloading
           ? const SizedBox(
               width: 16,
@@ -402,8 +477,8 @@ class _ChrRequestsScreenState extends State<ChrRequestsScreen> {
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
               ),
             )
-          : const Icon(Icons.download, size: 18),
-      label: Text(isDownloading ? 'Downloading...' : 'Download Certificate'),
+          : const Icon(Icons.picture_as_pdf, size: 18),
+      label: Text(isDownloading ? 'Generating...' : 'Download Baby Card'),
       style: ElevatedButton.styleFrom(
         backgroundColor: AppConstants.successGreen,
         foregroundColor: Colors.white,

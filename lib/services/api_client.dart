@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import '../utils/constants.dart';
 import '../models/chr_requests.dart';
+import '../models/child_registration_form.dart';
 import '../models/immunization_approval.dart' as immunization;
 import '../models/create_account_request.dart';
 import '../models/otp_response.dart';
@@ -178,6 +179,19 @@ class ApiClient {
     );
 
     return response;
+  }
+
+  // Download Baby Card PDF directly from Cloudinary URL - returns raw bytes
+  Future<Uint8List> downloadBabyCardFromUrl(String docUrl) async {
+    await _ensureInitialized();
+
+    // Download directly from Cloudinary (public URL, no auth needed)
+    final response = await _dio.get<List<int>>(
+      docUrl,
+      options: Options(responseType: ResponseType.bytes),
+    );
+
+    return Uint8List.fromList(response.data ?? []);
   }
 
   // Get immunization schedule
@@ -530,26 +544,43 @@ class ApiClient {
   }
 
   // Claim child with family code
-  Future<Response> claimChildWithCode(String familyCode) async {
+  Future<ClaimChildResult> claimChildWithCode(String familyCode) async {
     await _ensureInitialized();
     final formData = FormData.fromMap({'family_code': familyCode});
-    return await _dio.post(
+    final response = await _dio.post(
       AppConstants.claimChildWithCodeEndpoint,
       data: formData,
       options: Options(contentType: 'multipart/form-data'),
     );
+
+    final payload = response.data is String
+        ? json.decode(response.data)
+        : response.data;
+
+    if (payload is Map<String, dynamic>) {
+      return ClaimChildResult.fromJson(payload);
+    }
+
+    throw Exception('Unexpected response from claim_child_with_code endpoint.');
   }
 
   // Request immunization (new child registration)
-  Future<Response> requestImmunization(
-    Map<String, dynamic> formData,
+  Future<ChildRegistrationResult> requestImmunization(
+    ChildRegistrationRequest request, {
     File? babysCard,
-  ) async {
+  }) async {
     await _ensureInitialized();
 
-    final data = FormData.fromMap(formData);
+    final formMap = request.toFormMap();
+    final vaccines =
+        (formMap['vaccines_received[]'] as List<String>?) ?? const <String>[];
+    formMap.remove('vaccines_received[]');
+    if (vaccines.isNotEmpty) {
+      formMap['vaccines_received'] = vaccines.join(',');
+    }
 
-    // Add file if provided
+    final data = FormData.fromMap(formMap, ListFormat.multiCompatible);
+
     if (babysCard != null) {
       data.files.add(
         MapEntry(
@@ -562,11 +593,21 @@ class ApiClient {
       );
     }
 
-    return await _dio.post(
+    final response = await _dio.post(
       AppConstants.requestImmunizationEndpoint,
       data: data,
       options: Options(contentType: 'multipart/form-data'),
     );
+
+    final payload = response.data is String
+        ? json.decode(response.data)
+        : response.data;
+
+    if (payload is Map<String, dynamic>) {
+      return ChildRegistrationResult.fromJson(payload);
+    }
+
+    throw Exception('Unexpected response from request_immunization endpoint.');
   }
 
   // Get user profile data
@@ -1051,5 +1092,60 @@ class ApiClient {
 
     print('Reset Password Response: ${response.data}');
     return response;
+  }
+
+  // Baby Card PDF Generation Endpoints
+
+  /// Get Baby Card layout configuration JSON
+  Future<Map<String, dynamic>> getBabyCardLayout() async {
+    await _ensureInitialized();
+    final response = await _dio.get(AppConstants.getBabyCardLayoutEndpoint);
+
+    if (response.data is String) {
+      return json.decode(response.data);
+    }
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Get immunization records for a specific child
+  Future<List<Map<String, dynamic>>> getMyImmunizationRecords(
+    String babyId,
+  ) async {
+    await _ensureInitialized();
+
+    final formData = FormData.fromMap({'baby_id': babyId});
+    final response = await _dio.post(
+      AppConstants.getMyImmunizationRecordsEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    Map<String, dynamic> responseData;
+    if (response.data is String) {
+      responseData = json.decode(response.data);
+    } else {
+      responseData = response.data as Map<String, dynamic>;
+    }
+
+    if (responseData['status'] == 'success') {
+      final data = responseData['data'] as List;
+      return data.cast<Map<String, dynamic>>();
+    }
+
+    throw Exception(
+      responseData['message'] ?? 'Failed to load immunization records',
+    );
+  }
+
+  /// Download Baby Card background image as bytes
+  Future<List<int>> getBabyCardBackground() async {
+    await _ensureInitialized();
+
+    final response = await _dio.get(
+      '/assets/images/babycard.jpg',
+      options: Options(responseType: ResponseType.bytes),
+    );
+
+    return response.data as List<int>;
   }
 }

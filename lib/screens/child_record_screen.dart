@@ -842,8 +842,7 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
               final formattedDate = dateGiven.isNotEmpty
                   ? _formatDateForTable(dateGiven)
                   : '';
-              final vaccineName =
-                  '${vaccination.vaccineName} (Dose ${vaccination.doseNumber})';
+              final vaccineName = vaccination.vaccineWithDose;
               final status = vaccination.status.toUpperCase();
 
               return DataRow(
@@ -863,9 +862,9 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                       child: Tooltip(
                         message: vaccineName,
                         child: Text(
-                          vaccination.vaccineName.length > 12
-                              ? '${vaccination.vaccineName.substring(0, 12)}...'
-                              : vaccination.vaccineName,
+                          vaccineName.length > 18
+                              ? '${vaccineName.substring(0, 18)}...'
+                              : vaccineName,
                           style: const TextStyle(fontSize: 10),
                         ),
                       ),

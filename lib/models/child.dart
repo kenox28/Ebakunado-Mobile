@@ -29,6 +29,7 @@ class ChildSummaryItem {
   final String name;
   final String? upcomingDate;
   final String? upcomingVaccine;
+  final bool nextIsCatchUp;
   final int missedCount;
   final ClosestMissed? closestMissed;
   final String? qrCode;
@@ -38,6 +39,7 @@ class ChildSummaryItem {
     required this.name,
     this.upcomingDate,
     this.upcomingVaccine,
+    required this.nextIsCatchUp,
     required this.missedCount,
     this.closestMissed,
     this.qrCode,
@@ -49,6 +51,7 @@ class ChildSummaryItem {
       name: json['name'] ?? '',
       upcomingDate: json['upcoming_date'],
       upcomingVaccine: json['upcoming_vaccine'],
+      nextIsCatchUp: json['next_is_catch_up'] == true,
       missedCount: json['missed_count'] ?? 0,
       closestMissed: json['closest_missed'] != null
           ? ClosestMissed.fromJson(json['closest_missed'])

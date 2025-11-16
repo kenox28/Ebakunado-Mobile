@@ -16,11 +16,10 @@ import 'screens/debug_screen.dart';
 import 'screens/child_record_screen.dart';
 import 'screens/immunization_schedule_screen.dart';
 import 'screens/my_children_screen.dart';
-import 'screens/add_child_screen.dart';
-import 'screens/chr_requests_screen.dart';
+import 'screens/approved_requests_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/notification_test_screen.dart';
-import 'screens/immunization_approvals_screen.dart';
+import 'screens/app_notification_settings_screen.dart';
+import 'screens/add_child_screen.dart';
 import 'utils/constants.dart';
 import 'services/notification_service.dart';
 
@@ -29,6 +28,7 @@ void main() async {
 
   // Initialize timezone
   tz.initializeTimeZones();
+  await NotificationService.initializeTimezone();
 
   // Initialize Supabase
   await Supabase.initialize(
@@ -36,10 +36,10 @@ void main() async {
     anonKey: AppConstants.supabaseAnonKey,
   );
 
-  // Initialize notification service
+  // Initialize notification service (this also initializes WorkManager)
   await NotificationService.initialize();
 
-  // Schedule daily notification check
+  // Schedule daily notification check (uses WorkManager for reliability)
   await NotificationService.scheduleDailyNotificationCheck();
 
   runApp(const MyApp());
@@ -112,28 +112,20 @@ class MyApp extends StatelessWidget {
               return MaterialPageRoute(
                 builder: (_) => const MyChildrenScreen(),
               );
-            case AppConstants.addChildRoute:
+            case AppConstants.requestChildRoute:
               return MaterialPageRoute(builder: (_) => const AddChildScreen());
-            case AppConstants.chrRequestsRoute:
+            case AppConstants.approvedRequestsRoute:
               return MaterialPageRoute(
-                builder: (_) => const ChrRequestsScreen(),
+                builder: (_) => const ApprovedRequestsScreen(),
               );
             case AppConstants.settingsRoute:
               return MaterialPageRoute(builder: (_) => const SettingsScreen());
-            case AppConstants.approvedRequestsRoute:
+            case '/app-notifications':
               return MaterialPageRoute(
-                builder: (_) => const ChrRequestsScreen(),
-              );
-            case AppConstants.immunizationApprovalsRoute:
-              return MaterialPageRoute(
-                builder: (_) => const ImmunizationApprovalsScreen(),
+                builder: (_) => const AppNotificationSettingsScreen(),
               );
             case '/debug':
               return MaterialPageRoute(builder: (_) => const DebugScreen());
-            case '/notification_test':
-              return MaterialPageRoute(
-                builder: (_) => const NotificationTestScreen(),
-              );
             default:
               return MaterialPageRoute(
                 builder: (_) =>

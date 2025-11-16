@@ -5,6 +5,7 @@ import '../providers/user_profile_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../providers/notification_provider.dart';
 import '../utils/constants.dart';
+import '../services/notification_service.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -19,33 +20,51 @@ class AppDrawer extends StatelessWidget {
             builder: (context, authProvider, profileProvider, child) {
               final user = authProvider.user;
               final profile = profileProvider.profile;
+              final isLoading = profileProvider.isLoading && profile == null;
+
+              // If profile is loading and not available, try to load it
+              if (profile == null && !isLoading && !profileProvider.isLoading) {
+                // Trigger profile load if not already loading
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  profileProvider.loadProfileData();
+                });
+              }
+
+              // Get display name - prefer profile, fallback to user, then loading
+              final displayName =
+                  profile?.fullName ??
+                  user?.fullName ??
+                  (isLoading ? 'Loading...' : 'User');
+
+              // Get email - prefer profile, fallback to user
+              final displayEmail = profile?.email ?? user?.email ?? '';
+
+              // Get profile image - prefer profile, fallback to user
+              final profileImage = profile?.profileImg ?? user?.profileImg;
 
               return UserAccountsDrawerHeader(
                 decoration: const BoxDecoration(
                   color: AppConstants.primaryGreen,
                 ),
                 accountName: Text(
-                  profile?.fullName ?? user?.fullName ?? 'Loading...',
+                  displayName,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 accountEmail: Text(
-                  profile?.email ?? user?.email ?? '',
+                  displayEmail,
                   style: const TextStyle(fontSize: 14),
                 ),
                 currentAccountPicture: CircleAvatar(
                   backgroundColor: Colors.white,
-                  backgroundImage: (profile?.profileImg != null)
-                      ? NetworkImage(profile!.profileImg!)
-                      : (user?.profileImg != null)
-                      ? NetworkImage(user!.profileImg!)
+                  backgroundImage: profileImage != null
+                      ? NetworkImage(profileImage)
                       : null,
-                  child:
-                      (profile?.profileImg == null && user?.profileImg == null)
+                  child: profileImage == null
                       ? Icon(
-                          Icons.person,
+                          isLoading ? Icons.hourglass_empty : Icons.person,
                           size: 40,
                           color: AppConstants.primaryGreen,
                         )
@@ -69,6 +88,25 @@ class AppDrawer extends StatelessWidget {
                     Navigator.pop(context);
                   },
                 ),
+                // Removed 'Set Notification Time' from drawer (moved to Settings)
+                ListTile(
+                  leading: const Icon(Icons.alarm_on),
+                  title: const Text('Enable Exact Alarms'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await NotificationService.requestExactAlarmPermission();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Opening Exact Alarms settings. Enable Ebakunado there.',
+                          ),
+                          duration: Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  },
+                ),
                 ListTile(
                   leading: const Icon(Icons.child_care),
                   title: const Text('My Children'),
@@ -78,11 +116,14 @@ class AppDrawer extends StatelessWidget {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.person_add),
+                  leading: const Icon(Icons.person_add_alt_1),
                   title: const Text('Add Child'),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, AppConstants.addChildRoute);
+                    Navigator.pushNamed(
+                      context,
+                      AppConstants.requestChildRoute,
+                    );
                   },
                 ),
                 ListTile(
@@ -116,14 +157,6 @@ class AppDrawer extends StatelessWidget {
                         content: Text('Help & Support coming soon'),
                       ),
                     );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.bug_report),
-                  title: const Text('Debug & Notifications'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/notification_test');
                   },
                 ),
               ],

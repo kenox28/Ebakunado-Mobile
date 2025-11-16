@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/user_profile_provider.dart';
@@ -45,19 +46,34 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
       );
 
       if (success && mounted) {
-        // Load profile data after successful login
+        // Load profile data after successful login and wait for it to complete
+        // This ensures profile is available immediately when home screen loads
         await profileProvider.loadProfileData();
 
-        // Small delay to ensure profile data is saved to SharedPreferences
-        await Future.delayed(const Duration(milliseconds: 500));
+        // Verify profile was loaded successfully
+        if (profileProvider.profile == null) {
+          debugPrint(
+            'Warning: Profile failed to load after login, retrying...',
+          );
+          // Retry once
+          await profileProvider.loadProfileData();
+        }
+
+        // Get user_id from profile provider (now it's loaded)
+        final userId = profileProvider.profile?.userId;
+        final profileName = profileProvider.profile?.fullName ?? 'User';
+        debugPrint(
+          'Profile loaded after login - userId: $userId, name: $profileName',
+        );
 
         // Schedule daily notification check after login
         await NotificationService.scheduleDailyNotificationCheck();
 
-        // Check for immunization notifications after login
-        await NotificationService.checkForNewNotificationsDaily();
-
-        Navigator.pushReplacementNamed(context, AppConstants.homeRoute);
+        // Navigate to home screen - profile is now loaded and will be available
+        // in the drawer immediately
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, AppConstants.homeRoute);
+        }
       } else if (mounted) {
         // Login failed but no exception was thrown
         showErrorAlert('Login failed. Please check your credentials.');
