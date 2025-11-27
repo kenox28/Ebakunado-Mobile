@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
 import 'package:country_picker/country_picker.dart';
 import 'dart:async';
 import '../services/api_client.dart';
 import '../models/create_account_request.dart';
-import '../models/location_data.dart';
 import '../utils/constants.dart';
 import '../mixins/animated_alert_mixin.dart';
+import '../widgets/privacy_policy_consent_card.dart';
 
 class CreateAccountScreen extends StatefulWidget {
   const CreateAccountScreen({super.key});
@@ -30,13 +29,14 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _provinceController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _barangayController = TextEditingController();
+  final _purokController = TextEditingController();
+  final _otpInputController = TextEditingController();
 
   // Form state
   String _gender = '';
-  String _province = '';
-  String _cityMunicipality = '';
-  String _barangay = '';
-  String _purok = '';
   bool _agreedToTerms = false;
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -48,26 +48,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   Timer? _otpTimer;
   int _otpCountdown = 300; // 5 minutes
   String _verifiedPhone = '';
-  String _csrfToken = '';
-
-  // Location data
-  List<LocationData> _provinces = [];
-  List<LocationData> _cities = [];
-  List<LocationData> _barangays = [];
-  List<LocationData> _puroks = [];
-  bool _isLoadingProvinces = false;
-  bool _isLoadingCities = false;
-  bool _isLoadingBarangays = false;
-  bool _isLoadingPuroks = false;
 
   // Phone number country
   Country _selectedCountry = Country.parse('PH');
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProvinces();
-  }
 
   @override
   void dispose() {
@@ -77,98 +60,13 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _provinceController.dispose();
+    _cityController.dispose();
+    _barangayController.dispose();
+    _purokController.dispose();
+    _otpInputController.dispose();
     _otpTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadProvinces() async {
-    setState(() => _isLoadingProvinces = true);
-    try {
-      final response = await ApiClient.instance.getLocations(type: 'provinces');
-      setState(() {
-        _provinces = response.locations;
-        _isLoadingProvinces = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingProvinces = false);
-      showErrorAlert('Failed to load provinces. Please try again.');
-    }
-  }
-
-  Future<void> _loadCities(String province) async {
-    setState(() {
-      _isLoadingCities = true;
-      _cities = [];
-      _cityMunicipality = '';
-      _barangays = [];
-      _barangay = '';
-      _puroks = [];
-      _purok = '';
-    });
-    try {
-      final response = await ApiClient.instance.getLocations(
-        type: 'cities',
-        province: province,
-      );
-      setState(() {
-        _cities = response.locations;
-        _isLoadingCities = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingCities = false);
-      showErrorAlert('Failed to load cities. Please try again.');
-    }
-  }
-
-  Future<void> _loadBarangays(String province, String city) async {
-    setState(() {
-      _isLoadingBarangays = true;
-      _barangays = [];
-      _barangay = '';
-      _puroks = [];
-      _purok = '';
-    });
-    try {
-      final response = await ApiClient.instance.getLocations(
-        type: 'barangays',
-        province: province,
-        cityMunicipality: city,
-      );
-      setState(() {
-        _barangays = response.locations;
-        _isLoadingBarangays = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingBarangays = false);
-      showErrorAlert('Failed to load barangays. Please try again.');
-    }
-  }
-
-  Future<void> _loadPuroks(
-    String province,
-    String city,
-    String barangay,
-  ) async {
-    setState(() {
-      _isLoadingPuroks = true;
-      _puroks = [];
-      _purok = '';
-    });
-    try {
-      final response = await ApiClient.instance.getLocations(
-        type: 'puroks',
-        province: province,
-        cityMunicipality: city,
-        barangay: barangay,
-      );
-      setState(() {
-        _puroks = response.locations;
-        _isLoadingPuroks = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingPuroks = false);
-      showErrorAlert('Failed to load puroks. Please try again.');
-    }
   }
 
   void _startOtpTimer() {
@@ -207,7 +105,11 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
             ? response.message.split('to ')[1]
             : phoneNumber;
         _startOtpTimer();
-        setState(() => _isOtpModalVisible = true);
+        setState(() {
+          _otp = '';
+          _otpInputController.clear();
+          _isOtpModalVisible = true;
+        });
         showSuccessAlert('OTP sent successfully! Check your phone.');
       } else {
         showErrorAlert(response.message);
@@ -248,6 +150,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     setState(() {
       _isOtpModalVisible = false;
       _otp = '';
+      _otpInputController.clear();
     });
     _otpTimer?.cancel();
   }
@@ -313,20 +216,20 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   }
 
   bool _validateStep2() {
-    if (_province.isEmpty) {
-      showErrorAlert('Please select a province');
+    if (_provinceController.text.trim().isEmpty) {
+      showErrorAlert('Please enter your province');
       return false;
     }
-    if (_cityMunicipality.isEmpty) {
-      showErrorAlert('Please select a city/municipality');
+    if (_cityController.text.trim().isEmpty) {
+      showErrorAlert('Please enter your city or municipality');
       return false;
     }
-    if (_barangay.isEmpty) {
-      showErrorAlert('Please select a barangay');
+    if (_barangayController.text.trim().isEmpty) {
+      showErrorAlert('Please enter your barangay');
       return false;
     }
-    if (_purok.isEmpty) {
-      showErrorAlert('Please select a purok');
+    if (_purokController.text.trim().isEmpty) {
+      showErrorAlert('Please enter your purok');
       return false;
     }
     return true;
@@ -412,15 +315,16 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
         email: _emailController.text.trim(),
         number: phoneForApi, // Send without '+' sign
         gender: _gender,
-        province: _province,
-        cityMunicipality: _cityMunicipality,
-        barangay: _barangay,
-        purok: _purok,
+        province: _provinceController.text.trim(),
+        cityMunicipality: _cityController.text.trim(),
+        barangay: _barangayController.text.trim(),
+        purok: _purokController.text.trim(),
         password: _passwordController.text,
         confirmPassword: _confirmPasswordController.text,
         csrfToken: '', // Will be set by API client with mobile app token
         mobileAppRequest: true,
         skipOtp: false,
+        agreedToTerms: _agreedToTerms,
       );
 
       print('Creating account for: ${_emailController.text.trim()}');
@@ -570,155 +474,258 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
             GestureDetector(
               onTap: _closeOtpModal,
               child: Container(
+                width: double.infinity,
+                height: double.infinity,
                 color: Colors.black.withOpacity(0.5),
-                child: Center(
-                  child: Container(
-                    margin: const EdgeInsets.all(20),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 10,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.sms,
-                          size: 48,
-                          color: AppConstants.primaryGreen,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Verify Phone Number',
-                          style: AppConstants.headingStyle.copyWith(
-                            fontSize: 20,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Enter the 6-digit code sent to',
-                          style: AppConstants.bodyStyle.copyWith(
-                            color: AppConstants.textSecondary,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _verifiedPhone,
-                          style: AppConstants.bodyStyle.copyWith(
-                            color: AppConstants.primaryGreen,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final mediaQuery = MediaQuery.of(context);
+                    final double viewInsets = mediaQuery.viewInsets.bottom;
+                    final double modalWidth = (mediaQuery.size.width * 0.9)
+                        .clamp(280.0, 460.0)
+                        .toDouble();
 
-                        // OTP Input Field
-                        Material(
-                          color: Colors.transparent,
-                          child: OtpTextField(
-                            numberOfFields: 6,
-                            borderColor: AppConstants.primaryGreen,
-                            focusedBorderColor: AppConstants.primaryGreen,
-                            showFieldAsBox: true,
-                            borderWidth: 2,
-                            borderRadius: BorderRadius.circular(8),
-                            fieldWidth: 40,
-                            fieldHeight: 50,
-                            textStyle: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            onCodeChanged: (String code) {
-                              setState(() {
-                                _otp = code;
-                              });
-                            },
-                            onSubmit: (String verificationCode) {
-                              _otp = verificationCode;
-                              _verifyOtp();
-                            },
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(24, 32, 24, 32 + viewInsets),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: 460,
+                            minWidth: modalWidth,
                           ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Countdown Timer
-                        if (_otpCountdown > 0)
-                          Text(
-                            'Code expires in ${_formatCountdown(_otpCountdown)}',
-                            style: AppConstants.bodyStyle.copyWith(
-                              color: AppConstants.warningOrange,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        else
-                          Text(
-                            'Code has expired. Please request a new one.',
-                            style: AppConstants.bodyStyle.copyWith(
-                              color: AppConstants.errorRed,
-                            ),
-                          ),
-
-                        const SizedBox(height: 24),
-
-                        // Buttons
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: _closeOtpModal,
-                                child: const Text('Cancel'),
+                          child: Material(
+                            borderRadius: BorderRadius.circular(18),
+                            color: Colors.white,
+                            elevation: 8,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 28,
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _otp.length == 6 ? _verifyOtp : null,
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.white,
-                                              ),
+                              child: LayoutBuilder(
+                                builder: (context, modalConstraints) {
+                                  final bool isNarrow =
+                                      modalConstraints.maxWidth < 360;
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.sms,
+                                        size: 48,
+                                        color: AppConstants.primaryGreen,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Verify Phone Number',
+                                        style: AppConstants.headingStyle
+                                            .copyWith(fontSize: 20),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Enter the 6-digit code sent to',
+                                        style: AppConstants.bodyStyle.copyWith(
+                                          color: AppConstants.textSecondary,
                                         ),
-                                      )
-                                    : const Text('Verify'),
-                              ),
-                            ),
-                          ],
-                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _verifiedPhone,
+                                        style: AppConstants.bodyStyle.copyWith(
+                                          color: AppConstants.primaryGreen,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 28),
 
-                        const SizedBox(height: 16),
+                                      // OTP Input Field (single line)
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: TextFormField(
+                                          controller: _otpInputController,
+                                          keyboardType: TextInputType.number,
+                                          textAlign: TextAlign.center,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                            LengthLimitingTextInputFormatter(6),
+                                          ],
+                                          style: const TextStyle(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 12,
+                                          ),
+                                          decoration: InputDecoration(
+                                            hintText: '••••••',
+                                            hintStyle: TextStyle(
+                                              color: Colors.grey.shade400,
+                                              letterSpacing: 12,
+                                            ),
+                                            counterText: '',
+                                            filled: true,
+                                            fillColor: Colors.grey.shade100,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  vertical: 14,
+                                                  horizontal: 12,
+                                                ),
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              borderSide: const BorderSide(
+                                                color:
+                                                    AppConstants.primaryGreen,
+                                                width: 2,
+                                              ),
+                                            ),
+                                            focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              borderSide: const BorderSide(
+                                                color:
+                                                    AppConstants.primaryGreen,
+                                                width: 2.5,
+                                              ),
+                                            ),
+                                            enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              borderSide: BorderSide(
+                                                color: Colors.grey.shade300,
+                                                width: 2,
+                                              ),
+                                            ),
+                                          ),
+                                          onChanged: (value) {
+                                            setState(() => _otp = value);
+                                            if (value.length == 6) {
+                                              FocusScope.of(context).unfocus();
+                                            }
+                                          },
+                                        ),
+                                      ),
 
-                        // Resend OTP
-                        if (_otpCountdown == 0)
-                          TextButton(
-                            onPressed: () async {
-                              await _sendOtp();
-                            },
-                            child: Text(
-                              'Resend OTP',
-                              style: TextStyle(
-                                color: AppConstants.primaryGreen,
+                                      const SizedBox(height: 14),
+
+                                      // Countdown Timer
+                                      if (_otpCountdown > 0)
+                                        Text(
+                                          'Code expires in ${_formatCountdown(_otpCountdown)}',
+                                          style: AppConstants.bodyStyle
+                                              .copyWith(
+                                                color:
+                                                    AppConstants.warningOrange,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                          textAlign: TextAlign.center,
+                                        )
+                                      else
+                                        Text(
+                                          'Code has expired. Please request a new one.',
+                                          style: AppConstants.bodyStyle
+                                              .copyWith(
+                                                color: AppConstants.errorRed,
+                                              ),
+                                          textAlign: TextAlign.center,
+                                        ),
+
+                                      const SizedBox(height: 22),
+
+                                      // Buttons
+                                      if (isNarrow)
+                                        Column(
+                                          children: [
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: OutlinedButton(
+                                                onPressed: _closeOtpModal,
+                                                child: const Text('Cancel'),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            SizedBox(
+                                              width: double.infinity,
+                                              child: ElevatedButton(
+                                                onPressed: _otp.length == 6
+                                                    ? _verifyOtp
+                                                    : null,
+                                                child: _isLoading
+                                                    ? const SizedBox(
+                                                        height: 20,
+                                                        width: 20,
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          valueColor:
+                                                              AlwaysStoppedAnimation<
+                                                                Color
+                                                              >(Colors.white),
+                                                        ),
+                                                      )
+                                                    : const Text('Verify'),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      else
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: OutlinedButton(
+                                                onPressed: _closeOtpModal,
+                                                child: const Text('Cancel'),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            Expanded(
+                                              child: ElevatedButton(
+                                                onPressed: _otp.length == 6
+                                                    ? _verifyOtp
+                                                    : null,
+                                                child: _isLoading
+                                                    ? const SizedBox(
+                                                        height: 20,
+                                                        width: 20,
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          valueColor:
+                                                              AlwaysStoppedAnimation<
+                                                                Color
+                                                              >(Colors.white),
+                                                        ),
+                                                      )
+                                                    : const Text('Verify'),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+
+                                      const SizedBox(height: 16),
+
+                                      // Resend OTP
+                                      if (_otpCountdown == 0)
+                                        TextButton(
+                                          onPressed: () async {
+                                            await _sendOtp();
+                                          },
+                                          child: Text(
+                                            'Resend OTP',
+                                            style: TextStyle(
+                                              color: AppConstants.primaryGreen,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -933,146 +940,72 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
         ),
         const SizedBox(height: 32),
 
-        // Province Dropdown
-        DropdownButtonFormField<String>(
-          value: _province.isEmpty ? null : _province,
+        // Province
+        TextFormField(
+          controller: _provinceController,
           decoration: const InputDecoration(
             labelText: 'Province',
+            hintText: 'Enter province',
             prefixIcon: Icon(Icons.map),
           ),
-          items: _provinces.map((province) {
-            return DropdownMenuItem(
-              value: province.province,
-              child: Text(province.province),
-            );
-          }).toList(),
-          onChanged: (value) {
-            setState(() {
-              _province = value ?? '';
-              if (value != null) {
-                _loadCities(value);
-              }
-            });
-          },
+          textCapitalization: TextCapitalization.words,
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please select a province';
+            if (value == null || value.trim().isEmpty) {
+              return 'Please enter your province';
             }
             return null;
           },
         ),
         const SizedBox(height: 16),
 
-        // City/Municipality Dropdown
-        DropdownButtonFormField<String>(
-          value: _cityMunicipality.isEmpty ? null : _cityMunicipality,
-          decoration: InputDecoration(
-            labelText: 'City/Municipality',
-            prefixIcon: const Icon(Icons.location_city),
-            suffixIcon: _isLoadingCities
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
+        // City / Municipality
+        TextFormField(
+          controller: _cityController,
+          decoration: const InputDecoration(
+            labelText: 'City / Municipality',
+            hintText: 'Enter city or municipality',
+            prefixIcon: Icon(Icons.location_city),
           ),
-          items: _cities.map((city) {
-            return DropdownMenuItem(
-              value: city.cityMunicipality ?? city.province,
-              child: Text(city.cityMunicipality ?? city.province),
-            );
-          }).toList(),
-          onChanged: _cities.isEmpty
-              ? null
-              : (value) {
-                  setState(() {
-                    _cityMunicipality = value ?? '';
-                    if (value != null && _province.isNotEmpty) {
-                      _loadBarangays(_province, value);
-                    }
-                  });
-                },
+          textCapitalization: TextCapitalization.words,
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please select a city/municipality';
+            if (value == null || value.trim().isEmpty) {
+              return 'Please enter your city or municipality';
             }
             return null;
           },
         ),
         const SizedBox(height: 16),
 
-        // Barangay Dropdown
-        DropdownButtonFormField<String>(
-          value: _barangay.isEmpty ? null : _barangay,
-          decoration: InputDecoration(
+        // Barangay
+        TextFormField(
+          controller: _barangayController,
+          decoration: const InputDecoration(
             labelText: 'Barangay',
-            prefixIcon: const Icon(Icons.home),
-            suffixIcon: _isLoadingBarangays
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
+            hintText: 'Enter barangay',
+            prefixIcon: Icon(Icons.home),
           ),
-          items: _barangays.map((barangay) {
-            return DropdownMenuItem(
-              value: barangay.barangay ?? barangay.province,
-              child: Text(barangay.barangay ?? barangay.province),
-            );
-          }).toList(),
-          onChanged: _barangays.isEmpty
-              ? null
-              : (value) {
-                  setState(() {
-                    _barangay = value ?? '';
-                    if (value != null &&
-                        _province.isNotEmpty &&
-                        _cityMunicipality.isNotEmpty) {
-                      _loadPuroks(_province, _cityMunicipality, value);
-                    }
-                  });
-                },
+          textCapitalization: TextCapitalization.words,
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please select a barangay';
+            if (value == null || value.trim().isEmpty) {
+              return 'Please enter your barangay';
             }
             return null;
           },
         ),
         const SizedBox(height: 16),
 
-        // Purok Dropdown
-        DropdownButtonFormField<String>(
-          value: _purok.isEmpty ? null : _purok,
-          decoration: InputDecoration(
+        // Purok
+        TextFormField(
+          controller: _purokController,
+          decoration: const InputDecoration(
             labelText: 'Purok',
-            prefixIcon: const Icon(Icons.place),
-            suffixIcon: _isLoadingPuroks
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
+            hintText: 'Enter purok',
+            prefixIcon: Icon(Icons.place),
           ),
-          items: _puroks.map((purok) {
-            return DropdownMenuItem(
-              value: purok.purok ?? purok.province,
-              child: Text(purok.purok ?? purok.province),
-            );
-          }).toList(),
-          onChanged: _puroks.isEmpty
-              ? null
-              : (value) {
-                  setState(() {
-                    _purok = value ?? '';
-                  });
-                },
+          textCapitalization: TextCapitalization.words,
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please select a purok';
+            if (value == null || value.trim().isEmpty) {
+              return 'Please enter your purok';
             }
             return null;
           },
@@ -1212,39 +1145,26 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
 
-        // Terms and Conditions
-        Row(
-          children: [
-            Checkbox(
-              value: _agreedToTerms,
-              onChanged: (value) {
-                setState(() {
-                  _agreedToTerms = value ?? false;
-                });
-              },
-            ),
-            Expanded(
-              child: RichText(
-                text: TextSpan(
-                  style: AppConstants.bodyStyle,
-                  children: [
-                    const TextSpan(text: 'I agree to the '),
-                    TextSpan(
-                      text: 'Privacy Policy',
-                      style: TextStyle(color: AppConstants.primaryGreen),
-                    ),
-                    const TextSpan(text: ' and '),
-                    TextSpan(
-                      text: 'Terms of Service',
-                      style: TextStyle(color: AppConstants.primaryGreen),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+        // Privacy Policy & Terms of Service
+        PrivacyPolicyConsentCard(
+          agreed: _agreedToTerms,
+          onChanged: (value) {
+            setState(() {
+              _agreedToTerms = value ?? false;
+            });
+          },
+          onOpenPrivacy: () {
+            // TODO: Open privacy policy URL or PDF
+            // You can use url_launcher package here
+            // Example: launchUrl(Uri.parse('https://your-privacy-policy-url.com'));
+          },
+          onOpenTerms: () {
+            // TODO: Open terms of service URL or PDF
+            // You can use url_launcher package here
+            // Example: launchUrl(Uri.parse('https://your-terms-url.com'));
+          },
         ),
       ],
     );

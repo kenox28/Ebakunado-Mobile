@@ -13,6 +13,7 @@ class CreateAccountRequest {
   final String csrfToken;
   final bool mobileAppRequest;
   final bool skipOtp;
+  final bool agreedToTerms;
 
   CreateAccountRequest({
     required this.fname,
@@ -29,6 +30,7 @@ class CreateAccountRequest {
     required this.csrfToken,
     this.mobileAppRequest = true,
     this.skipOtp = false,
+    this.agreedToTerms = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -47,6 +49,7 @@ class CreateAccountRequest {
       'csrf_token': csrfToken,
       'mobile_app_request': mobileAppRequest.toString(),
       'skip_otp': skipOtp.toString(),
+      'agree_terms': agreedToTerms ? 'yes' : 'no',
     };
   }
 
@@ -66,6 +69,7 @@ class CreateAccountRequest {
       csrfToken: json['csrf_token'] ?? '',
       mobileAppRequest: json['mobile_app_request'] == 'true',
       skipOtp: json['skip_otp'] == 'true',
+      agreedToTerms: json['agree_terms'] == 'yes',
     );
   }
 }

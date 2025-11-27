@@ -11,6 +11,7 @@ import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../utils/vaccine_catalog.dart';
 import '../mixins/animated_alert_mixin.dart';
+import '../widgets/app_bottom_navigation.dart';
 
 class AddChildScreen extends StatefulWidget {
   const AddChildScreen({super.key});
@@ -26,7 +27,7 @@ class _AddChildScreenState extends State<AddChildScreen>
   final _imagePicker = ImagePicker();
 
   // Loading states
-  bool _isClaimingChild = false;
+  bool _isLinkingChild = false;
   bool _isRegisteringChild = false;
   UserProfile? _userProfile;
 
@@ -34,7 +35,10 @@ class _AddChildScreenState extends State<AddChildScreen>
   final _childFnameController = TextEditingController();
   final _childLnameController = TextEditingController();
   final _placeOfBirthController = TextEditingController();
-  final _addressController = TextEditingController();
+  final _provinceController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _barangayController = TextEditingController();
+  final _purokController = TextEditingController();
   final _birthWeightController = TextEditingController();
   final _birthHeightController = TextEditingController();
   final _bloodTypeController = TextEditingController();
@@ -43,10 +47,12 @@ class _AddChildScreenState extends State<AddChildScreen>
   final _fatherNameController = TextEditingController();
   final _familyPlanningController = TextEditingController();
   final _birthAttendantOthersController = TextEditingController();
+  final _placeNewbornScreeningController = TextEditingController();
 
   // Form values
   DateTime? _birthDate;
   DateTime? _lmp;
+  DateTime? _newbornScreeningDate;
   String _gender = 'Male';
   String _deliveryType = 'Normal';
   String _birthOrder = 'Single';
@@ -68,7 +74,10 @@ class _AddChildScreenState extends State<AddChildScreen>
     _childFnameController.dispose();
     _childLnameController.dispose();
     _placeOfBirthController.dispose();
-    _addressController.dispose();
+    _provinceController.dispose();
+    _cityController.dispose();
+    _barangayController.dispose();
+    _purokController.dispose();
     _birthWeightController.dispose();
     _birthHeightController.dispose();
     _bloodTypeController.dispose();
@@ -77,6 +86,7 @@ class _AddChildScreenState extends State<AddChildScreen>
     _fatherNameController.dispose();
     _familyPlanningController.dispose();
     _birthAttendantOthersController.dispose();
+    _placeNewbornScreeningController.dispose();
     super.dispose();
   }
 
@@ -100,6 +110,9 @@ class _AddChildScreenState extends State<AddChildScreen>
           foregroundColor: Colors.white,
         ),
         body: _buildBody(),
+        bottomNavigationBar: const AppBottomNavigation(
+          current: BottomNavDestination.addChild,
+        ),
       ),
     );
   }
@@ -110,7 +123,7 @@ class _AddChildScreenState extends State<AddChildScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section 1: Family Code Claiming
+          // Section 1: Family Code Linking
           _buildFamilyCodeSection(),
 
           const SizedBox(height: 32),
@@ -171,7 +184,7 @@ class _AddChildScreenState extends State<AddChildScreen>
             ),
             const SizedBox(height: 12),
             Text(
-              'Enter the code given by your BHW/Midwife to add your child',
+              'Enter the code shared by your BHW/Midwife to link your child',
               style: AppConstants.bodyStyle.copyWith(
                 color: AppConstants.textSecondary,
               ),
@@ -203,8 +216,8 @@ class _AddChildScreenState extends State<AddChildScreen>
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _isClaimingChild ? null : _claimChildWithCode,
-                icon: _isClaimingChild
+                onPressed: _isLinkingChild ? null : _startLinkChildFlow,
+                icon: _isLinkingChild
                     ? const SizedBox(
                         width: 16,
                         height: 16,
@@ -215,8 +228,8 @@ class _AddChildScreenState extends State<AddChildScreen>
                           ),
                         ),
                       )
-                    : const Icon(Icons.check_circle, size: 18),
-                label: Text(_isClaimingChild ? 'Claiming...' : 'Claim Child'),
+                    : const Icon(Icons.link, size: 18),
+                label: Text(_isLinkingChild ? 'Linking...' : 'Link Child'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppConstants.successGreen,
                   foregroundColor: Colors.white,
@@ -325,12 +338,39 @@ class _AddChildScreenState extends State<AddChildScreen>
                 label: 'Place of Birth',
               ),
               _buildTextFormField(
-                controller: _addressController,
-                label: 'Address *',
-                hint: 'Example: Leyte, Ormoc, Linao, 1',
-                maxLines: 3,
+                controller: _provinceController,
+                label: 'Province *',
+                hint: 'Enter province',
+                textCapitalization: TextCapitalization.words,
+                validator: (value) => value?.trim().isEmpty == true
+                    ? 'Province is required'
+                    : null,
+              ),
+              _buildTextFormField(
+                controller: _cityController,
+                label: 'City / Municipality *',
+                hint: 'Enter city or municipality',
+                textCapitalization: TextCapitalization.words,
+                validator: (value) => value?.trim().isEmpty == true
+                    ? 'City / Municipality is required'
+                    : null,
+              ),
+              _buildTextFormField(
+                controller: _barangayController,
+                label: 'Barangay *',
+                hint: 'Enter barangay',
+                textCapitalization: TextCapitalization.words,
+                validator: (value) => value?.trim().isEmpty == true
+                    ? 'Barangay is required'
+                    : null,
+              ),
+              _buildTextFormField(
+                controller: _purokController,
+                label: 'Purok *',
+                hint: 'Enter purok',
+                textCapitalization: TextCapitalization.words,
                 validator: (value) =>
-                    value?.isEmpty == true ? 'Address is required' : null,
+                    value?.trim().isEmpty == true ? 'Purok is required' : null,
               ),
               Row(
                 children: [
@@ -358,6 +398,15 @@ class _AddChildScreenState extends State<AddChildScreen>
               _buildTextFormField(
                 controller: _allergiesController,
                 label: 'Allergies',
+              ),
+              _buildDateField(
+                label: 'Date of Newborn Screening',
+                value: _newbornScreeningDate,
+                onTap: _selectNewbornScreeningDate,
+              ),
+              _buildTextFormField(
+                controller: _placeNewbornScreeningController,
+                label: 'Place of Newborn Screening',
               ),
 
               const SizedBox(height: 24),
@@ -517,6 +566,7 @@ class _AddChildScreenState extends State<AddChildScreen>
     TextInputType? keyboardType,
     int maxLines = 1,
     String? hint,
+    TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -525,6 +575,7 @@ class _AddChildScreenState extends State<AddChildScreen>
         validator: validator,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        textCapitalization: textCapitalization,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -743,6 +794,18 @@ class _AddChildScreenState extends State<AddChildScreen>
     }
   }
 
+  Future<void> _selectNewbornScreeningDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != _newbornScreeningDate) {
+      setState(() => _newbornScreeningDate = picked);
+    }
+  }
+
   Future<void> _pickImageFromGallery() async {
     try {
       final XFile? image = await _imagePicker.pickImage(
@@ -788,9 +851,7 @@ class _AddChildScreenState extends State<AddChildScreen>
           _userProfile = profileResponse.profile!;
 
           // Pre-fill address from user's place
-          if (_userProfile!.place != null && _userProfile!.place!.isNotEmpty) {
-            _addressController.text = _userProfile!.place!;
-          }
+          _prefillAddressFields(_userProfile!.place);
 
           // Pre-fill parent name based on gender
           final fullName = _userProfile!.fullName;
@@ -809,35 +870,111 @@ class _AddChildScreenState extends State<AddChildScreen>
     }
   }
 
-  Future<void> _claimChildWithCode() async {
-    if (_familyCodeController.text.trim().isEmpty) {
+  Future<void> _startLinkChildFlow() async {
+    final code = _familyCodeController.text.trim();
+    if (code.isEmpty) {
       showErrorAlert('Please enter a family code');
       return;
     }
 
-    setState(() {
-      _isClaimingChild = true;
-    });
+    setState(() => _isLinkingChild = true);
+
+    ClaimChildResult? previewResult;
+    try {
+      previewResult = await ApiClient.instance.previewChildByCode(code);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        if (mounted) {
+          ErrorHandler.handleError(
+            context,
+            AuthExpiredException('Session expired'),
+          );
+        }
+      } else {
+        showErrorAlert('Network error. Please try again.');
+      }
+      return;
+    } catch (e) {
+      if (e is AuthExpiredException) {
+        if (mounted) {
+          ErrorHandler.handleError(context, e);
+        }
+      } else {
+        showErrorAlert('Unable to verify family code. Please try again.');
+      }
+      return;
+    } finally {
+      if (mounted) {
+        setState(() => _isLinkingChild = false);
+      }
+    }
+
+    if (!previewResult.isSuccess) {
+      showErrorAlert(previewResult.message);
+      return;
+    }
+
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Link Child?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Child: ${previewResult!.childName ?? 'Unknown'}',
+                style: AppConstants.subheadingStyle.copyWith(fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              if (previewResult.babyId != null &&
+                  previewResult.babyId!.trim().isNotEmpty)
+                Text('Baby ID: ${previewResult.babyId}'),
+              const SizedBox(height: 12),
+              const Text(
+                'Please confirm you want to link this child to your account.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Link Child'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _linkChildRecord(code);
+    }
+  }
+
+  Future<void> _linkChildRecord(String code) async {
+    setState(() => _isLinkingChild = true);
 
     try {
-      final result = await ApiClient.instance.claimChildWithCode(
-        _familyCodeController.text.trim(),
-      );
+      final result = await ApiClient.instance.claimChildWithCode(code);
 
       if (result.isSuccess) {
         showSuccessAlert(
-          'Child "${result.childName}" added successfully! Baby ID: ${result.babyId}',
+          'Child "${result.childName ?? 'Child'}" linked successfully! Baby ID: ${result.babyId ?? 'N/A'}',
           duration: const Duration(seconds: 3),
         );
         _familyCodeController.clear();
 
-        // Auto-redirect after 3 seconds
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted) {
-            Navigator.pop(
-              context,
-              true,
-            ); // Return true to indicate refresh needed
+            Navigator.pop(context, true);
           }
         });
       } else {
@@ -860,11 +997,11 @@ class _AddChildScreenState extends State<AddChildScreen>
           ErrorHandler.handleError(context, e);
         }
       } else {
-        showErrorAlert('Failed to claim child. Please try again.');
+        showErrorAlert('Failed to link child. Please try again.');
       }
     } finally {
       if (mounted) {
-        setState(() => _isClaimingChild = false);
+        setState(() => _isLinkingChild = false);
       }
     }
   }
@@ -884,9 +1021,7 @@ class _AddChildScreenState extends State<AddChildScreen>
     });
 
     try {
-      // Format address: convert spaces to commas if not already comma-separated
-      final rawAddress = _addressController.text.trim();
-      final formattedAddress = _formatAddress(rawAddress);
+      final formattedAddress = _composeAddress();
 
       final dateFormatter = DateFormat('yyyy-MM-dd');
 
@@ -929,6 +1064,13 @@ class _AddChildScreenState extends State<AddChildScreen>
         familyPlanning: _familyPlanningController.text.trim().isEmpty
             ? null
             : _familyPlanningController.text.trim(),
+        dateNewbornScreening: _newbornScreeningDate != null
+            ? dateFormatter.format(_newbornScreeningDate!)
+            : null,
+        placeNewbornScreening:
+            _placeNewbornScreeningController.text.trim().isEmpty
+            ? null
+            : _placeNewbornScreeningController.text.trim(),
         vaccinesReceived: _vaccinesReceived.toList(),
       );
 
@@ -1106,26 +1248,36 @@ class _AddChildScreenState extends State<AddChildScreen>
     });
   }
 
-  String _formatAddress(String address) {
-    if (address.isEmpty) return address;
-
-    // If address already contains commas, assume it's already formatted
-    if (address.contains(',')) {
-      // Clean up: remove extra spaces around commas
-      return address
-          .split(',')
-          .map((part) => part.trim())
-          .where((part) => part.isNotEmpty)
-          .join(', ');
+  void _prefillAddressFields(String? place) {
+    if (place == null || place.trim().isEmpty) {
+      return;
     }
-
-    // If no commas, format spaces to comma-separated
-    final parts = address
-        .split(RegExp(r'\s+'))
+    final parts = place
+        .split(',')
         .map((part) => part.trim())
         .where((part) => part.isNotEmpty)
         .toList();
+    if (parts.isNotEmpty) {
+      _provinceController.text = parts[0];
+    }
+    if (parts.length > 1) {
+      _cityController.text = parts[1];
+    }
+    if (parts.length > 2) {
+      _barangayController.text = parts[2];
+    }
+    if (parts.length > 3) {
+      _purokController.text = parts[3];
+    }
+  }
 
+  String _composeAddress() {
+    final parts = [
+      _provinceController.text.trim(),
+      _cityController.text.trim(),
+      _barangayController.text.trim(),
+      _purokController.text.trim(),
+    ].where((part) => part.isNotEmpty).toList();
     return parts.join(', ');
   }
 
@@ -1153,14 +1305,20 @@ class _AddChildScreenState extends State<AddChildScreen>
       _childFnameController.clear();
       _childLnameController.clear();
       _placeOfBirthController.clear();
-      // Keep pre-filled address from profile
-      if (_userProfile?.place == null || _userProfile!.place!.isEmpty) {
-        _addressController.clear();
+      final savedPlace = _userProfile?.place;
+      if (savedPlace == null || savedPlace.isEmpty) {
+        _provinceController.clear();
+        _cityController.clear();
+        _barangayController.clear();
+        _purokController.clear();
+      } else {
+        _prefillAddressFields(savedPlace);
       }
       _birthWeightController.clear();
       _birthHeightController.clear();
       _bloodTypeController.clear();
       _allergiesController.clear();
+      _placeNewbornScreeningController.clear();
       // Keep pre-filled parent names from profile
       if (_userProfile == null || _userProfile!.gender == null) {
         _motherNameController.clear();
@@ -1170,6 +1328,7 @@ class _AddChildScreenState extends State<AddChildScreen>
       _birthAttendantOthersController.clear();
       _birthDate = null;
       _lmp = null;
+      _newbornScreeningDate = null;
       _gender = 'Male';
       _deliveryType = 'Normal';
       _birthOrder = 'Single';

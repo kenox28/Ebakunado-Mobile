@@ -5,7 +5,6 @@ import '../providers/user_profile_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../providers/notification_provider.dart';
 import '../utils/constants.dart';
-import '../services/notification_service.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -88,25 +87,6 @@ class AppDrawer extends StatelessWidget {
                     Navigator.pop(context);
                   },
                 ),
-                // Removed 'Set Notification Time' from drawer (moved to Settings)
-                ListTile(
-                  leading: const Icon(Icons.alarm_on),
-                  title: const Text('Enable Exact Alarms'),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await NotificationService.requestExactAlarmPermission();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Opening Exact Alarms settings. Enable Ebakunado there.',
-                          ),
-                          duration: Duration(seconds: 5),
-                        ),
-                      );
-                    }
-                  },
-                ),
                 ListTile(
                   leading: const Icon(Icons.child_care),
                   title: const Text('My Children'),
@@ -143,20 +123,6 @@ class AppDrawer extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.pushNamed(context, AppConstants.settingsRoute);
-                  },
-                ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.help),
-                  title: const Text('Help & Support'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    // TODO: Navigate to help
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Help & Support coming soon'),
-                      ),
-                    );
                   },
                 ),
               ],

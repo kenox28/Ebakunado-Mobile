@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io' show Platform;
 import 'providers/auth_provider.dart';
 import 'providers/dashboard_provider.dart';
 import 'providers/notification_provider.dart';
@@ -146,12 +148,63 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  bool _isCheckingFirstLaunch = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAuthStatus();
+      _handleFirstLaunchAndAuth();
     });
+  }
+
+  Future<void> _handleFirstLaunchAndAuth() async {
+    try {
+      // Check if this is first launch and request permissions
+      await _handleFirstLaunchPermissions();
+
+      // Then check auth status
+      await _checkAuthStatus();
+    } catch (e) {
+      debugPrint('Initialization failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingFirstLaunch = false);
+      }
+    }
+  }
+
+  Future<void> _handleFirstLaunchPermissions() async {
+    if (!Platform.isAndroid) {
+      return; // Only for Android
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isFirstLaunch = prefs.getBool('first_launch_completed') ?? true;
+
+      if (isFirstLaunch) {
+        debugPrint('First launch detected - requesting permissions...');
+
+        // Request notification permission (system dialog)
+        await NotificationService.requestPermissions();
+
+        // Request battery optimization exemption (system dialog)
+        await NotificationService.requestBatteryOptimizationExemption();
+
+        // Request exact alarms permission (system dialog, Android 12+)
+        final canSchedule = await NotificationService.canScheduleExactAlarms();
+        if (!canSchedule) {
+          await NotificationService.requestExactAlarmPermission();
+        }
+
+        // Mark first launch as completed
+        await prefs.setBool('first_launch_completed', false);
+        debugPrint('First launch permissions requested');
+      }
+    } catch (e) {
+      debugPrint('Error handling first launch permissions: $e');
+    }
   }
 
   Future<void> _checkAuthStatus() async {
@@ -182,7 +235,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
-        if (authProvider.isLoading) {
+        // Show loading screen while checking first launch and auth
+        if (_isCheckingFirstLaunch || authProvider.isLoading) {
           return Scaffold(
             body: Center(
               child: Column(

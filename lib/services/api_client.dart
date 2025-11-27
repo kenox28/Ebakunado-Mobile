@@ -564,6 +564,26 @@ class ApiClient {
     throw Exception('Unexpected response from claim_child_with_code endpoint.');
   }
 
+  Future<ClaimChildResult> previewChildByCode(String familyCode) async {
+    await _ensureInitialized();
+    final formData = FormData.fromMap({'family_code': familyCode});
+    final response = await _dio.post(
+      AppConstants.previewChildByCodeEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+
+    final payload = response.data is String
+        ? json.decode(response.data)
+        : response.data;
+
+    if (payload is Map<String, dynamic>) {
+      return ClaimChildResult.fromJson(payload);
+    }
+
+    throw Exception('Unexpected response from preview_child_by_code endpoint.');
+  }
+
   // Request immunization (new child registration)
   Future<ChildRegistrationResult> requestImmunization(
     ChildRegistrationRequest request, {
@@ -737,6 +757,7 @@ class ApiClient {
       csrfToken: 'BYPASS_FOR_MOBILE_APP', // Special token for mobile apps
       mobileAppRequest: true,
       skipOtp: false, // OTP already verified in previous step
+      agreedToTerms: request.agreedToTerms,
     );
 
     print('Creating account with data: ${requestWithCsrf.toJson()}');

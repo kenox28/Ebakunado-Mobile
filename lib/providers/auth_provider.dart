@@ -17,8 +17,14 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _isLoggedIn;
   bool get isLoading => _isLoading;
 
-  Future<bool> login(String emailOrPhone, String password) async {
-    _setLoading(true);
+  Future<bool> login(
+    String emailOrPhone,
+    String password, {
+    bool showGlobalLoading = true,
+  }) async {
+    if (showGlobalLoading) {
+      _setLoading(true);
+    }
 
     try {
       final response = await ApiClient.instance.login(emailOrPhone, password);
@@ -56,7 +62,9 @@ class AuthProvider extends ChangeNotifier {
       }
       rethrow;
     } finally {
-      _setLoading(false);
+      if (showGlobalLoading) {
+        _setLoading(false);
+      }
     }
   }
 
@@ -117,5 +125,9 @@ class AuthProvider extends ChangeNotifier {
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
+  }
+
+  void setGlobalLoading(bool loading) {
+    _setLoading(loading);
   }
 }

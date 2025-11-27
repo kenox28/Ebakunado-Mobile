@@ -79,22 +79,25 @@ class DailyCheckService : Service() {
                 val channel = NotificationChannel(
                     FOREGROUND_CHANNEL_ID,
                     FOREGROUND_CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_NONE
                 ).apply {
                     description = "Keeps Ebakunado daily checks running in the background"
                     setShowBadge(false)
                     enableVibration(false)
+                    setSound(null, null)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
                 }
                 manager.createNotificationChannel(channel)
             }
         }
 
         val notification = NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
-            .setContentTitle("Ebakunado Background Checks")
-            .setContentText("Syncing immunization reminders…")
+            .setContentTitle("")
+            .setContentText("")
             .setSmallIcon(R.mipmap.launcher_icon)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
+            .setShowWhen(false)
             .build()
 
         startForeground(FOREGROUND_NOTIFICATION_ID, notification)

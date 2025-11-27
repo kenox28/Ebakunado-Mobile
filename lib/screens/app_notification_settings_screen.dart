@@ -12,7 +12,6 @@ class AppNotificationSettingsScreen extends StatefulWidget {
 class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsScreen> {
   bool _loading = true;
   bool _notificationsEnabled = false;
-  bool _exactAlarmsAllowed = false;
   bool _batteryUnrestricted = false;
   TimeOfDay? _customTime;
 
@@ -25,13 +24,11 @@ class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsS
   Future<void> _load() async {
     final custom = await NotificationService.getCustomNotificationTime();
     final notifEnabled = await NotificationService.areNotificationsEnabled();
-    final exactAllowed = await NotificationService.canScheduleExactAlarms();
     final batteryOk = await NotificationService.isBatteryOptimizationDisabled();
     if (!mounted) return;
     setState(() {
       _customTime = custom;
       _notificationsEnabled = notifEnabled;
-      _exactAlarmsAllowed = exactAllowed;
       _batteryUnrestricted = batteryOk;
       _loading = false;
     });
@@ -100,22 +97,6 @@ class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsS
                         trailing: const Icon(Icons.open_in_new),
                         onTap: () async {
                           await NotificationService.openSystemNotificationSettings();
-                          await _load();
-                        },
-                      ),
-                      const Divider(height: 0),
-                      SwitchListTile(
-                        title: const Text('Exact alarms'),
-                        subtitle: Text(_exactAlarmsAllowed ? 'Allowed' : 'Not allowed'),
-                        value: _exactAlarmsAllowed,
-                        onChanged: null,
-                        secondary: const Icon(Icons.alarm),
-                      ),
-                      ListTile(
-                        title: const Text('Open exact alarms settings'),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () async {
-                          await NotificationService.requestExactAlarmPermission();
                           await _load();
                         },
                       ),

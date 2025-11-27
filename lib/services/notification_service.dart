@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:io';
 import 'api_client.dart';
 import '../models/child.dart';
+import '../models/daily_notifications.dart';
 import '../models/user_profile.dart';
 
 // Top-level function for background notification handler
@@ -484,6 +485,14 @@ class NotificationService {
       '🔄 Triggering daily notification check (cache-first, no banner)',
     );
     try {
+      // Prefer the dedicated daily notifications endpoint (includes batch schedules)
+      final handledViaApi = await _tryDailyNotificationsEndpoint();
+      if (handledViaApi) {
+        await _recordNotificationCheckTime();
+        debugPrint('✅ Daily check completed via get_daily_notifications.php');
+        return;
+      }
+
       // Try cached children_summary (works even without auth)
       final cached = await _loadChildrenSummaryCache();
       if (cached != null) {
@@ -491,12 +500,7 @@ class NotificationService {
           final childrenSummary = ChildrenSummaryResponse.fromJson(cached);
           await checkNotificationsFromDashboardData(childrenSummary);
           await scheduleUpcomingImmunizationNotifications(childrenSummary);
-          // Update last check time
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(
-            _lastNotificationCheckKey,
-            DateTime.now().toIso8601String(),
-          );
+          await _recordNotificationCheckTime();
           debugPrint('✅ Daily check completed using cache');
           return;
         } catch (e) {
@@ -527,11 +531,7 @@ class NotificationService {
               } catch (_) {}
               await checkNotificationsFromDashboardData(childrenSummary);
               await scheduleUpcomingImmunizationNotifications(childrenSummary);
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString(
-                _lastNotificationCheckKey,
-                DateTime.now().toIso8601String(),
-              );
+              await _recordNotificationCheckTime();
               debugPrint('✅ Daily check completed using live data');
               return;
             }
@@ -550,6 +550,289 @@ class NotificationService {
   // Legacy method - redirects to daily check
   static Future<void> checkForNewNotificationsDaily() async {
     await _triggerDailyNotificationCheck();
+  }
+
+  static Future<void> _recordNotificationCheckTime() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _lastNotificationCheckKey,
+        DateTime.now().toIso8601String(),
+      );
+    } catch (e) {
+      debugPrint('⚠️ Failed to record notification check time: $e');
+    }
+  }
+
+  static Future<bool> _tryDailyNotificationsEndpoint() async {
+    try {
+      final response = await ApiClient.instance.getDailyNotifications();
+      if (response.data == null) {
+        debugPrint('ℹ️ Daily notifications response is empty');
+        return false;
+      }
+
+      Map<String, dynamic> responseData;
+      if (response.data is String) {
+        responseData = json.decode(response.data);
+      } else if (response.data is Map<String, dynamic>) {
+        responseData = Map<String, dynamic>.from(response.data);
+      } else {
+        debugPrint(
+          '⚠️ Unsupported daily notifications response type: '
+          '${response.data.runtimeType}',
+        );
+        return false;
+      }
+
+      if ((responseData['status'] ?? '').toString().toLowerCase() !=
+          'success') {
+        debugPrint(
+          '⚠️ Daily notifications endpoint returned status '
+          '${responseData['status']}',
+        );
+        return false;
+      }
+
+      final data = responseData['data'];
+      if (data is! Map<String, dynamic>) {
+        debugPrint('⚠️ Daily notifications payload missing data object');
+        return false;
+      }
+
+      final payload = DailyNotificationsPayload.fromJson(
+        Map<String, dynamic>.from(data),
+      );
+      final userId = await _getCurrentUserId();
+      await _processDailyNotificationPayload(payload, userId: userId);
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error calling get_daily_notifications.php: $e');
+      return false;
+    }
+  }
+
+  static Future<void> _processDailyNotificationPayload(
+    DailyNotificationsPayload payload, {
+    String? userId,
+  }) async {
+    if (!payload.hasAnyNotifications) {
+      debugPrint('ℹ️ Daily notifications endpoint returned no items');
+      return;
+    }
+
+    final supabaseClient = (userId != null && userId.isNotEmpty)
+        ? Supabase.instance.client
+        : null;
+
+    Future<void> handleEntry(
+      DailyNotificationEntry entry,
+      String bucket,
+    ) async {
+      await _handleDailyNotificationEntry(
+        entry: entry,
+        bucket: bucket,
+        supabase: supabaseClient,
+        userId: userId,
+      );
+    }
+
+    for (final entry in payload.today) {
+      await handleEntry(entry, 'today');
+    }
+    for (final entry in payload.tomorrow) {
+      await handleEntry(entry, 'tomorrow');
+    }
+    for (final entry in payload.missed) {
+      await handleEntry(entry, 'missed');
+    }
+  }
+
+  static Future<void> _handleDailyNotificationEntry({
+    required DailyNotificationEntry entry,
+    required String bucket,
+    SupabaseClient? supabase,
+    String? userId,
+  }) async {
+    final logType = _mapEntryTypeToLogType(bucket);
+    final logDate =
+        entry.targetDate ??
+        entry.batchScheduleDate ??
+        entry.guidelineDate ??
+        DateTime.now().toIso8601String().split('T')[0];
+    final sourceLabel =
+        (entry.dateSource ??
+                (entry.batchScheduleDate != null ? 'batch' : 'guideline'))
+            .toLowerCase();
+
+    final payloadId = _payloadForEntry(bucket, entry.babyId);
+
+    // Check if native path already showed this notification (Option 1: prevent duplicates)
+    final shownByNative = await _wasNotificationShownByNative(
+      entry.babyId,
+      payloadId,
+      logDate,
+    );
+
+    if (shownByNative) {
+      debugPrint(
+        '↪️ Skipping duplicate notification for ${entry.childName} '
+        '(baby_id=${entry.babyId}) - already shown by native path',
+      );
+      // Still log to database for tracking
+      if (supabase != null && userId != null && userId.isNotEmpty) {
+        await _logNotificationEvent(
+          supabase: supabase,
+          babyId: entry.babyId,
+          userId: userId,
+          type: logType,
+          notificationDate: logDate,
+          dateSource: sourceLabel,
+          guidelineDate: entry.guidelineDate,
+          batchScheduleDate: entry.batchScheduleDate,
+          message: _buildBodyWithDateContext(entry),
+        );
+      }
+      return;
+    }
+
+    // Check database deduplication (secondary check)
+    bool alreadySent = false;
+    if (supabase != null && userId != null && userId.isNotEmpty) {
+      alreadySent = await _isNotificationAlreadySent(
+        supabase,
+        entry.babyId,
+        userId,
+        logType,
+        logDate,
+      );
+    }
+
+    if (alreadySent) {
+      debugPrint(
+        '↪️ Skipping duplicate notification for ${entry.childName} '
+        '(baby_id=${entry.babyId}) type=$logType date=$logDate source=$sourceLabel',
+      );
+      return;
+    }
+
+    final title = _titleForEntry(bucket, sourceLabel);
+    final body = _buildBodyWithDateContext(entry);
+
+    debugPrint(
+      '📣 Notifying ${entry.childName} ($bucket, ${entry.vaccineName}) '
+      'source=$sourceLabel guideline=${entry.guidelineDate} '
+      'batch=${entry.batchScheduleDate}',
+    );
+
+    await showNotification(title: title, body: body, payload: payloadId);
+
+    if (supabase != null && userId != null && userId.isNotEmpty) {
+      await _logNotificationEvent(
+        supabase: supabase,
+        babyId: entry.babyId,
+        userId: userId,
+        type: logType,
+        notificationDate: logDate,
+        dateSource: sourceLabel,
+        guidelineDate: entry.guidelineDate,
+        batchScheduleDate: entry.batchScheduleDate,
+        message: body,
+      );
+    }
+  }
+
+  static String _mapEntryTypeToLogType(String bucket) {
+    switch (bucket) {
+      case 'today':
+        return 'schedule_same_day';
+      case 'tomorrow':
+        return 'schedule_reminder';
+      case 'missed':
+        return 'missed_schedule';
+      default:
+        return bucket;
+    }
+  }
+
+  static String _titleForEntry(String bucket, String sourceLabel) {
+    final sourcePrefix = sourceLabel == 'batch'
+        ? 'Batch Immunization'
+        : 'Immunization';
+    switch (bucket) {
+      case 'today':
+        return '$sourcePrefix Today';
+      case 'tomorrow':
+        return '$sourcePrefix Tomorrow';
+      case 'missed':
+        return '$sourcePrefix Missed';
+      default:
+        return '$sourcePrefix Update';
+    }
+  }
+
+  static String _payloadForEntry(String bucket, String babyId) {
+    switch (bucket) {
+      case 'today':
+        return 'immunization_today_$babyId';
+      case 'tomorrow':
+        return 'immunization_tomorrow_$babyId';
+      case 'missed':
+        return 'immunization_missed_$babyId';
+      default:
+        return 'immunization_$babyId';
+    }
+  }
+
+  static String _buildBodyWithDateContext(DailyNotificationEntry entry) {
+    final baseMessage = entry.message.isNotEmpty
+        ? entry.message
+        : '${entry.childName} has ${entry.vaccineName} updates';
+    final dateSource =
+        (entry.dateSource ??
+                (entry.batchScheduleDate != null ? 'batch' : 'guideline'))
+            .toUpperCase();
+    final when =
+        entry.batchScheduleDate ?? entry.guidelineDate ?? entry.targetDate;
+    final suffix = when != null ? '\n$dateSource DATE: $when' : '';
+    return '$baseMessage$suffix';
+  }
+
+  static Future<void> _logNotificationEvent({
+    required SupabaseClient supabase,
+    required String babyId,
+    required String userId,
+    required String type,
+    required String notificationDate,
+    String? dateSource,
+    String? guidelineDate,
+    String? batchScheduleDate,
+    String? message,
+  }) async {
+    try {
+      final payload =
+          <String, dynamic>{
+            'baby_id': babyId,
+            'user_id': userId,
+            'type': type,
+            'notification_date': notificationDate,
+            'date_source': dateSource,
+            'guideline_date': guidelineDate,
+            'batch_schedule_date': batchScheduleDate,
+            'message': message,
+          }..removeWhere(
+            (key, value) =>
+                value == null || (value is String && value.trim().isEmpty),
+          );
+
+      await supabase.from('notification_logs').insert(payload);
+      debugPrint(
+        '📝 Logged notification for $babyId '
+        '(type=$type date=$notificationDate source=${dateSource ?? 'guideline'})',
+      );
+    } catch (e) {
+      debugPrint('⚠️ Failed to log notification event: $e');
+    }
   }
 
   // Show scheduled immunization notification (called by WorkManager)
@@ -576,7 +859,6 @@ class NotificationService {
         styleInformation: BigTextStyleInformation(
           message,
           contentTitle: title,
-          summaryText: 'Ebakunado Notification',
         ),
         enableVibration: true,
         playSound: true,
@@ -629,7 +911,6 @@ class NotificationService {
       styleInformation: BigTextStyleInformation(
         body, // Full body text for expandable notifications
         contentTitle: title,
-        summaryText: 'Ebakunado Notification',
       ),
       enableVibration: true,
       playSound: true,
@@ -672,7 +953,6 @@ class NotificationService {
       styleInformation: BigTextStyleInformation(
         body, // Full body text for expandable notifications
         contentTitle: title,
-        summaryText: 'Ebakunado Scheduled Notification',
       ),
       enableVibration: true,
       playSound: true,
@@ -746,11 +1026,17 @@ class NotificationService {
         if (info == null) continue;
         final dateOnly = (info['date'] as String).split('T')[0];
         final isCatchUp = info['isCatchUp'] as bool;
+        final source = (info['source'] as String?) ?? 'guideline';
+        final batchDate = info['batchDate'] as String?;
+        final guidelineDate = info['guidelineDate'] as String?;
         if (dateOnly == todayString) {
           final body = _buildScheduleMessage(
             item: item,
             isCatchUp: isCatchUp,
             scheduleText: 'scheduled today',
+            isBatchSchedule: source == 'batch',
+            batchDate: batchDate,
+            guidelineDate: guidelineDate,
           );
           todayList.add({
             'id': item.babyId,
@@ -765,6 +1051,9 @@ class NotificationService {
             item: item,
             isCatchUp: isCatchUp,
             scheduleText: 'scheduled tomorrow',
+            isBatchSchedule: source == 'batch',
+            batchDate: batchDate,
+            guidelineDate: guidelineDate,
           );
           tomorrowList.add({
             'id': item.babyId,
@@ -942,6 +1231,25 @@ class NotificationService {
     }
   }
 
+  // Check if notification was already shown by native path (Option 1 deduplication)
+  static Future<bool> _wasNotificationShownByNative(
+    String babyId,
+    String payload,
+    String date,
+  ) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final result = await _alarmChannel.invokeMethod<bool>(
+        'wasNotificationShownByNative',
+        {'babyId': babyId, 'payload': payload, 'date': date},
+      );
+      return result ?? false;
+    } catch (e) {
+      debugPrint('⚠️ Error checking native notification status: $e');
+      return false; // If check fails, allow notification (fallback)
+    }
+  }
+
   // Check if notification already sent today
   static Future<bool> _isNotificationAlreadySent(
     SupabaseClient supabase,
@@ -1077,7 +1385,18 @@ class NotificationService {
   static Map<String, dynamic>? _getEffectiveUpcomingInfo(
     ChildSummaryItem item,
   ) {
-    String? dateIso = item.upcomingDate;
+    final String? guidelineDate = item.upcomingDate;
+    final String? batchDate = item.batchScheduleDate;
+
+    // Only use batch schedule if scheduleSource confirms this vaccine uses batch
+    // This prevents using batch date from a different vaccine
+    final bool currentVaccineUsesBatch =
+        item.scheduleSource?.toLowerCase() == 'batch' &&
+        batchDate != null &&
+        batchDate.isNotEmpty;
+
+    // Use batch date only if this specific vaccine uses batch schedule
+    String? dateIso = currentVaccineUsesBatch ? batchDate : guidelineDate;
     bool isCatchUp = item.nextIsCatchUp;
     String? vaccine = item.upcomingVaccine;
 
@@ -1096,23 +1415,77 @@ class NotificationService {
       return null;
     }
 
-    return {'date': dateIso, 'isCatchUp': isCatchUp, 'vaccine': vaccine ?? ''};
+    final source = isCatchUp
+        ? 'catch_up'
+        : currentVaccineUsesBatch
+        ? 'batch'
+        : 'guideline';
+
+    return {
+      'date': dateIso,
+      'isCatchUp': isCatchUp,
+      'vaccine': vaccine ?? '',
+      'source': source,
+      // Only include batch date if this vaccine actually uses it
+      'batchDate': currentVaccineUsesBatch ? batchDate : null,
+      'guidelineDate': guidelineDate,
+    };
   }
 
   static String _buildScheduleMessage({
     required ChildSummaryItem item,
     required bool isCatchUp,
     required String scheduleText,
+    bool isBatchSchedule = false,
+    String? batchDate,
+    String? guidelineDate,
   }) {
     final vaccine = item.upcomingVaccine?.isNotEmpty == true
         ? item.upcomingVaccine!
         : item.closestMissed?.vaccineName ?? 'scheduled vaccine';
 
-    if (isCatchUp) {
-      return '${item.name} has a catch-up immunization ($vaccine) $scheduleText';
-    }
+    final base = isCatchUp
+        ? '${item.name} has a catch-up immunization ($vaccine) $scheduleText'
+        : '${item.name} has $vaccine $scheduleText';
 
-    return '${item.name} has $vaccine $scheduleText';
+    final context = _formatScheduleContext(
+      isBatchSchedule: isBatchSchedule,
+      batchDate: batchDate,
+      guidelineDate: guidelineDate,
+      isCatchUp: isCatchUp,
+    );
+
+    return context.isNotEmpty ? '$base $context' : base;
+  }
+
+  static String _formatScheduleContext({
+    required bool isBatchSchedule,
+    required bool isCatchUp,
+    String? batchDate,
+    String? guidelineDate,
+  }) {
+    if (isBatchSchedule && batchDate != null && batchDate.isNotEmpty) {
+      return '(Batch date: ${_formatReadableDate(batchDate)})';
+    }
+    if (isCatchUp && guidelineDate != null && guidelineDate.isNotEmpty) {
+      return '(Catch-up date: ${_formatReadableDate(guidelineDate)})';
+    }
+    if (!isBatchSchedule &&
+        !isCatchUp &&
+        guidelineDate != null &&
+        guidelineDate.isNotEmpty) {
+      return '(Guideline date: ${_formatReadableDate(guidelineDate)})';
+    }
+    return '';
+  }
+
+  static String _formatReadableDate(String raw) {
+    try {
+      final date = DateTime.parse(raw);
+      return DateFormat('MMM d, yyyy').format(date);
+    } catch (_) {
+      return raw;
+    }
   }
 
   // Schedule daily notification check at custom time (default: 12:00 AM) Philippines time
@@ -1487,9 +1860,12 @@ class NotificationService {
         final String dateIso = info['date'] as String;
         final bool isCatchUp = info['isCatchUp'] as bool;
         final String vaccine = (info['vaccine'] as String).trim();
+        final String source = (info['source'] as String?) ?? 'guideline';
+        final String? batchDate = info['batchDate'] as String?;
+        final String? guidelineDate = info['guidelineDate'] as String?;
 
         debugPrint(
-          'Processing ${item.name}: date=$dateIso catchUp=$isCatchUp vaccine=$vaccine',
+          'Processing ${item.name}: date=$dateIso catchUp=$isCatchUp vaccine=$vaccine source=$source',
         );
 
         try {
@@ -1527,6 +1903,9 @@ class NotificationService {
               item: item,
               isCatchUp: isCatchUp,
               scheduleText: scheduleText,
+              isBatchSchedule: source == 'batch',
+              batchDate: batchDate,
+              guidelineDate: guidelineDate,
             );
 
             final androidDetails = AndroidNotificationDetails(
@@ -1539,7 +1918,6 @@ class NotificationService {
               styleInformation: BigTextStyleInformation(
                 message,
                 contentTitle: title,
-                summaryText: 'Ebakunado Notification',
               ),
               enableVibration: true,
               playSound: true,
@@ -1688,96 +2066,312 @@ class NotificationService {
         'Total items in childrenSummary: ${childrenSummary.items.length}',
       );
 
-      // Filter children for today and tomorrow immunizations
+      // Filter children for today and tomorrow immunizations (upcoming + missed)
       final todayItems = <Map<String, dynamic>>[];
       final tomorrowItems = <Map<String, dynamic>>[];
 
       for (final item in childrenSummary.items) {
+        // Check upcoming schedules
         final info = _getEffectiveUpcomingInfo(item);
-        if (info == null) {
+        if (info != null) {
+          final upcomingDateString = (info['date'] as String).split('T')[0];
+          final isCatchUp = info['isCatchUp'] as bool;
           debugPrint(
-            'Skipping ${item.name} in daily check: no upcoming/catch-up',
+            'Daily check ${item.name}: date=$upcomingDateString catchUp=$isCatchUp',
           );
-          continue;
+
+          if (upcomingDateString == todayString) {
+            todayItems.add({
+              'item': item,
+              'isCatchUp': isCatchUp,
+              'info': info,
+              'isMissed': false,
+            });
+          } else if (upcomingDateString == tomorrowString) {
+            tomorrowItems.add({
+              'item': item,
+              'isCatchUp': isCatchUp,
+              'info': info,
+              'isMissed': false,
+            });
+          }
         }
 
-        final upcomingDateString = (info['date'] as String).split('T')[0];
-        final isCatchUp = info['isCatchUp'] as bool;
-        debugPrint(
-          'Daily check ${item.name}: date=$upcomingDateString catchUp=$isCatchUp',
-        );
+        // Check missed schedules (catch-up dates)
+        // Note: We don't use child-level batch schedule for missed vaccines
+        // because we can't verify it belongs to the missed vaccine.
+        // Only use catch-up date (guideline) for missed vaccines.
+        if (item.closestMissed != null &&
+            item.closestMissed!.catchUpDate != null) {
+          final catchUpDateString = item.closestMissed!.catchUpDate!.split(
+            'T',
+          )[0];
 
-        if (upcomingDateString == todayString) {
-          todayItems.add({'item': item, 'isCatchUp': isCatchUp});
-        } else if (upcomingDateString == tomorrowString) {
-          tomorrowItems.add({'item': item, 'isCatchUp': isCatchUp});
+          debugPrint(
+            'Daily check missed ${item.name}: catchUpDate=$catchUpDateString, vaccine=${item.closestMissed!.vaccineName}',
+          );
+
+          if (catchUpDateString == todayString) {
+            todayItems.add({
+              'item': item,
+              'isCatchUp': true,
+              'info': {
+                'date': catchUpDateString,
+                'isCatchUp': true,
+                'vaccine': item.closestMissed!.vaccineName,
+                'source':
+                    'guideline', // Missed vaccines use guideline catch-up date
+                'batchDate':
+                    null, // Don't use batch date for missed (can't verify it's for this vaccine)
+                'guidelineDate': catchUpDateString,
+              },
+              'isMissed': true,
+            });
+          } else if (catchUpDateString == tomorrowString) {
+            tomorrowItems.add({
+              'item': item,
+              'isCatchUp': true,
+              'info': {
+                'date': catchUpDateString,
+                'isCatchUp': true,
+                'vaccine': item.closestMissed!.vaccineName,
+                'source':
+                    'guideline', // Missed vaccines use guideline catch-up date
+                'batchDate':
+                    null, // Don't use batch date for missed (can't verify it's for this vaccine)
+                'guidelineDate': catchUpDateString,
+              },
+              'isMissed': true,
+            });
+          }
         }
       }
+
+      final supabaseClient = Supabase.instance.client;
 
       for (final entry in todayItems) {
         final ChildSummaryItem item = entry['item'] as ChildSummaryItem;
         final bool isCatchUp = entry['isCatchUp'] as bool;
+        final Map<String, dynamic> info = Map<String, dynamic>.from(
+          entry['info'] as Map,
+        );
+        final String source = (info['source'] as String?) ?? 'guideline';
+        final String? batchDate = info['batchDate'] as String?;
+        final String? guidelineDate = info['guidelineDate'] as String?;
+        final String logDate = (info['date'] as String).split('T')[0];
         final message = _buildScheduleMessage(
           item: item,
           isCatchUp: isCatchUp,
           scheduleText: 'scheduled today',
+          isBatchSchedule: source == 'batch',
+          batchDate: batchDate,
+          guidelineDate: guidelineDate,
         );
+
+        // Check if native path already showed this notification (Option 1: prevent duplicates)
+        final payloadId = 'immunization_today_${item.babyId}';
+        final shownByNative = await _wasNotificationShownByNative(
+          item.babyId,
+          payloadId,
+          logDate,
+        );
+
+        if (shownByNative) {
+          debugPrint(
+            '↪️ Skipping duplicate notification for ${item.name} '
+            '(baby_id=${item.babyId}) - already shown by native path',
+          );
+          // Still log to database for tracking
+          if (currentUserId != null) {
+            final bool isMissed = entry['isMissed'] as bool? ?? false;
+            final String notificationType = isMissed
+                ? 'missed_catch_up_same_day'
+                : isCatchUp
+                ? 'catch_up_same_day'
+                : 'schedule_same_day';
+            await _logNotificationEvent(
+              supabase: supabaseClient,
+              babyId: item.babyId,
+              userId: currentUserId,
+              type: notificationType,
+              notificationDate: logDate,
+              dateSource: source,
+              guidelineDate: guidelineDate,
+              batchScheduleDate: batchDate,
+              message: message,
+            );
+          }
+          continue; // Skip to next item
+        }
 
         bool alreadyNotified = false;
         if (currentUserId != null) {
           alreadyNotified = await _isNotificationAlreadySent(
-            Supabase.instance.client,
+            supabaseClient,
             item.babyId,
             currentUserId,
             isCatchUp ? 'catch_up_same_day' : 'schedule_same_day',
-            todayString,
+            logDate,
           );
         }
 
         if (!alreadyNotified) {
+          final bool isMissed = entry['isMissed'] as bool? ?? false;
+          final String title = isMissed
+              ? (source == 'batch'
+                    ? 'Missed Batch Immunization Today'
+                    : 'Missed Immunization - Catch Up Today')
+              : isCatchUp
+              ? 'Catch-up Immunization Today'
+              : (source == 'batch'
+                    ? 'Batch Immunization Today'
+                    : 'Immunization Due Today');
+
           await showNotification(
-            title: isCatchUp
-                ? 'Catch-up Immunization Today'
-                : 'Immunization Due Today',
+            title: title,
             body: message,
             payload: 'immunization_today_${item.babyId}',
           );
+
+          if (currentUserId != null) {
+            final bool isMissed = entry['isMissed'] as bool? ?? false;
+            final String notificationType = isMissed
+                ? 'missed_catch_up_same_day'
+                : isCatchUp
+                ? 'catch_up_same_day'
+                : 'schedule_same_day';
+
+            await _logNotificationEvent(
+              supabase: supabaseClient,
+              babyId: item.babyId,
+              userId: currentUserId,
+              type: notificationType,
+              notificationDate: logDate,
+              dateSource: source,
+              guidelineDate: guidelineDate,
+              batchScheduleDate: batchDate,
+              message: message,
+            );
+          }
         }
       }
 
       for (final entry in tomorrowItems) {
         final ChildSummaryItem item = entry['item'] as ChildSummaryItem;
         final bool isCatchUp = entry['isCatchUp'] as bool;
+        final Map<String, dynamic> info = Map<String, dynamic>.from(
+          entry['info'] as Map,
+        );
+        final String source = (info['source'] as String?) ?? 'guideline';
+        final String? batchDate = info['batchDate'] as String?;
+        final String? guidelineDate = info['guidelineDate'] as String?;
+        final String logDate = (info['date'] as String).split('T')[0];
         final message = _buildScheduleMessage(
           item: item,
           isCatchUp: isCatchUp,
           scheduleText: 'scheduled tomorrow',
+          isBatchSchedule: source == 'batch',
+          batchDate: batchDate,
+          guidelineDate: guidelineDate,
         );
+
+        // Check if native path already showed this notification (Option 1: prevent duplicates)
+        final payloadId = 'immunization_tomorrow_${item.babyId}';
+        final shownByNative = await _wasNotificationShownByNative(
+          item.babyId,
+          payloadId,
+          logDate,
+        );
+
+        if (shownByNative) {
+          debugPrint(
+            '↪️ Skipping duplicate notification for ${item.name} '
+            '(baby_id=${item.babyId}) - already shown by native path',
+          );
+          // Still log to database for tracking
+          if (currentUserId != null) {
+            final bool isMissed = entry['isMissed'] as bool? ?? false;
+            final String notificationType = isMissed
+                ? 'missed_catch_up_reminder'
+                : isCatchUp
+                ? 'catch_up_reminder'
+                : 'schedule_reminder';
+            await _logNotificationEvent(
+              supabase: supabaseClient,
+              babyId: item.babyId,
+              userId: currentUserId,
+              type: notificationType,
+              notificationDate: logDate,
+              dateSource: source,
+              guidelineDate: guidelineDate,
+              batchScheduleDate: batchDate,
+              message: message,
+            );
+          }
+          continue; // Skip to next item
+        }
 
         bool alreadyNotified = false;
         if (currentUserId != null) {
           alreadyNotified = await _isNotificationAlreadySent(
-            Supabase.instance.client,
+            supabaseClient,
             item.babyId,
             currentUserId,
             isCatchUp ? 'catch_up_reminder' : 'schedule_reminder',
-            todayString,
+            logDate,
           );
         }
 
         if (!alreadyNotified) {
+          final bool isMissed = entry['isMissed'] as bool? ?? false;
+          final String title = isMissed
+              ? (source == 'batch'
+                    ? 'Missed Batch Immunization Tomorrow'
+                    : 'Missed Immunization - Catch Up Tomorrow')
+              : isCatchUp
+              ? 'Catch-up Immunization Tomorrow'
+              : (source == 'batch'
+                    ? 'Batch Immunization Tomorrow'
+                    : 'Immunization Due Tomorrow');
+
           await showNotification(
-            title: isCatchUp
-                ? 'Catch-up Immunization Tomorrow'
-                : 'Immunization Due Tomorrow',
+            title: title,
             body: message,
             payload: 'immunization_tomorrow_${item.babyId}',
           );
+
+          if (currentUserId != null) {
+            final bool isMissed = entry['isMissed'] as bool? ?? false;
+            final String notificationType = isMissed
+                ? 'missed_catch_up_reminder'
+                : isCatchUp
+                ? 'catch_up_reminder'
+                : 'schedule_reminder';
+
+            await _logNotificationEvent(
+              supabase: supabaseClient,
+              babyId: item.babyId,
+              userId: currentUserId,
+              type: notificationType,
+              notificationDate: logDate,
+              dateSource: source,
+              guidelineDate: guidelineDate,
+              batchScheduleDate: batchDate,
+              message: message,
+            );
+          }
         }
       }
 
+      final int missedToday = todayItems
+          .where((e) => e['isMissed'] == true)
+          .length;
+      final int missedTomorrow = tomorrowItems
+          .where((e) => e['isMissed'] == true)
+          .length;
+
       debugPrint(
-        '=== Notification Check Completed: ${todayItems.length} today, ${tomorrowItems.length} tomorrow ===',
+        '=== Notification Check Completed: ${todayItems.length} today (${missedToday} missed), ${tomorrowItems.length} tomorrow (${missedTomorrow} missed) ===',
       );
     } catch (e) {
       debugPrint('Error checking notifications from dashboard data: $e');

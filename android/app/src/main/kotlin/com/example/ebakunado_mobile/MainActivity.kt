@@ -68,8 +68,8 @@ class MainActivity : FlutterActivity() {
                 "saveFallbackNotification" -> {
                     try {
                         val args = call.arguments as? Map<*, *>
-                        val title = args?.get("title") as? String ?: "Immunization Reminder"
-                        val body = args?.get("body") as? String ?: "Open Ebakunado to check upcoming immunizations."
+                        val title = args?.get("title") as? String ?: ""
+                        val body = args?.get("body") as? String ?: ""
                         saveFallbackNotification(title, body)
                         result.success(true)
                     } catch (e: Exception) {
@@ -108,6 +108,23 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     } catch (e: IllegalArgumentException) {
                         result.error("ARG_ERROR", e.message, null)
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "wasNotificationShownByNative" -> {
+                    try {
+                        val args = call.arguments as? Map<*, *>
+                        val babyId = args?.get("babyId") as? String ?: ""
+                        val payload = args?.get("payload") as? String ?: ""
+                        val date = args?.get("date") as? String ?: ""
+                        
+                        if (babyId.isEmpty() || date.isEmpty()) {
+                            result.success(false)
+                        } else {
+                            val wasShown = wasNotificationShownByNative(babyId, payload, date)
+                            result.success(wasShown)
+                        }
                     } catch (e: Exception) {
                         result.error("ERROR", e.message, null)
                     }
@@ -297,9 +314,8 @@ class MainActivity : FlutterActivity() {
             ?: throw IllegalArgumentException("Missing notification id")
         val triggerAtMillis = (args["triggerAtMillis"] as? Number)?.toLong()
             ?: throw IllegalArgumentException("Missing triggerAtMillis")
-        val title = args["title"] as? String ?: "Immunization Reminder"
-        val body = args["body"] as? String
-            ?: "Open Ebakunado to check upcoming immunizations."
+        val title = args["title"] as? String ?: ""
+        val body = args["body"] as? String ?: ""
         val channelId = args["channelId"] as? String
             ?: NotificationAlarmReceiver.CHANNEL_ID
         val payload = args["payload"] as? String
@@ -534,5 +550,12 @@ class MainActivity : FlutterActivity() {
             }
         }
         return calendar.timeInMillis
+    }
+
+    private fun wasNotificationShownByNative(babyId: String, payload: String, date: String): Boolean {
+        val prefs = getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+        val notificationKey = "shown_notif_$babyId$payload$date"
+        val lastShown = prefs.getString(notificationKey, null)
+        return lastShown == date
     }
 }

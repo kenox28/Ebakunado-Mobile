@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
+import 'package:flutter/services.dart';
 import '../services/api_client.dart';
 import '../utils/constants.dart';
 import '../mixins/animated_alert_mixin.dart';
@@ -17,6 +17,7 @@ class ForgotPasswordVerifyScreen extends StatefulWidget {
 class _ForgotPasswordVerifyScreenState extends State<ForgotPasswordVerifyScreen>
     with AnimatedAlertMixin {
   String _otp = '';
+  final TextEditingController _otpController = TextEditingController();
   bool _isLoading = false;
   Timer? _otpTimer;
   int _otpCountdown = 300; // 5 minutes
@@ -45,6 +46,7 @@ class _ForgotPasswordVerifyScreenState extends State<ForgotPasswordVerifyScreen>
 
   @override
   void dispose() {
+    _otpController.dispose();
     _otpTimer?.cancel();
     super.dispose();
   }
@@ -115,7 +117,10 @@ class _ForgotPasswordVerifyScreenState extends State<ForgotPasswordVerifyScreen>
       if (responseData['status'] == 'success') {
         showSuccessAlert('OTP resent successfully!');
         _startOtpTimer();
-        setState(() => _otp = ''); // Clear OTP field
+        setState(() {
+          _otp = '';
+          _otpController.clear();
+        }); // Clear OTP field
       } else {
         showErrorAlert(responseData['message'] ?? 'Failed to resend OTP');
       }
@@ -199,32 +204,61 @@ class _ForgotPasswordVerifyScreenState extends State<ForgotPasswordVerifyScreen>
 
                 const SizedBox(height: 40),
 
-                // OTP Input Field using flutter_otp_text_field
-                Material(
-                  color: Colors.transparent,
-                  child: OtpTextField(
-                    numberOfFields: 6,
-                    borderColor: AppConstants.primaryGreen,
-                    focusedBorderColor: AppConstants.primaryGreen,
-                    showFieldAsBox: true,
-                    borderWidth: 2,
-                    borderRadius: BorderRadius.circular(8),
-                    fieldWidth: 45,
-                    fieldHeight: 55,
-                    textStyle: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    onCodeChanged: (String code) {
-                      setState(() {
-                        _otp = code;
-                      });
-                    },
-                    onSubmit: (String verificationCode) {
-                      _otp = verificationCode;
-                      _verifyOtp();
-                    },
+                // OTP Input Field (single field)
+                TextFormField(
+                  controller: _otpController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(6),
+                  ],
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 12,
                   ),
+                  decoration: InputDecoration(
+                    hintText: '••••••',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      letterSpacing: 12,
+                    ),
+                    counterText: '',
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: AppConstants.primaryGreen,
+                        width: 2,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.grey.shade300,
+                        width: 2,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: AppConstants.primaryGreen,
+                        width: 2.5,
+                      ),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    setState(() => _otp = value);
+                  },
+                  onFieldSubmitted: (_) {
+                    if (_otp.length == 6) _verifyOtp();
+                  },
                 ),
 
                 const SizedBox(height: 32),

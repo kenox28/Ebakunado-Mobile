@@ -8,6 +8,7 @@ import '../providers/user_profile_provider.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/notification_bell.dart';
 import '../widgets/dashboard_content.dart';
+import '../widgets/app_bottom_navigation.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../services/notification_service.dart';
@@ -84,22 +85,17 @@ class _HomeScreenState extends State<HomeScreen> {
       // Get user_id from profile provider (more reliable than SharedPreferences)
       final userId = profileProvider.profile?.userId;
 
-      // Schedule upcoming immunization notifications in advance
-      // This ensures notifications work even when app is closed
       final childrenSummary = dashboardProvider.childrenSummary;
       if (childrenSummary != null) {
-        // Schedule notifications in advance for today/tomorrow immunizations
+        // Schedule notifications in advance for today/tomorrow immunizations.
+        // These scheduled entries will trigger at the right time even if the app is closed.
         await NotificationService.scheduleUpcomingImmunizationNotifications(
           childrenSummary,
           userId: userId,
         );
-
-        // Also check and show immediate notifications (for immediate display)
-        // Note: This will show notifications immediately if there are any due today/tomorrow
-        await NotificationService.checkNotificationsFromDashboardData(
-          childrenSummary,
-          userId: userId, // Pass userId directly from profile provider
-        );
+        // Do NOT trigger checkNotificationsFromDashboardData here to avoid
+        // immediate push when landing on dashboard; notifications will only
+        // appear when their scheduled time arrives (or from missed-notification recovery).
       }
     } catch (e) {
       if (mounted) {
@@ -276,6 +272,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
+          ),
+          bottomNavigationBar: const AppBottomNavigation(
+            current: BottomNavDestination.dashboard,
           ),
         );
       },

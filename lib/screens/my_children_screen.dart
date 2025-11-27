@@ -5,6 +5,7 @@ import '../services/api_client.dart';
 import '../models/child_list_item.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
+import '../widgets/app_bottom_navigation.dart';
 
 class MyChildrenScreen extends StatefulWidget {
   const MyChildrenScreen({super.key});
@@ -16,7 +17,7 @@ class MyChildrenScreen extends StatefulWidget {
 class _MyChildrenScreenState extends State<MyChildrenScreen> {
   List<ChildListItem> _allChildren = [];
   List<ChildListItem> _filteredChildren = [];
-  String _selectedFilter = 'all';
+  String _selectedFilter = 'accepted';
   bool _isLoading = true;
   String? _error;
 
@@ -88,21 +89,12 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
 
   void _applyFilter() {
     setState(() {
-      switch (_selectedFilter) {
-        case 'pending':
-          _filteredChildren = _allChildren
-              .where((child) => child.isPending)
-              .toList();
-          break;
-        case 'accepted':
-          _filteredChildren = _allChildren
-              .where((child) => child.isAccepted)
-              .toList();
-          break;
-        case 'all':
-        default:
-          _filteredChildren = List.from(_allChildren);
-          break;
+      if (_selectedFilter == 'pending') {
+        _filteredChildren =
+            _allChildren.where((child) => child.isPending).toList();
+      } else {
+        _filteredChildren =
+            _allChildren.where((child) => child.isAccepted).toList();
       }
     });
   }
@@ -122,9 +114,8 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         return 'Pending Registration';
       case 'accepted':
         return 'Approved Children';
-      case 'all':
       default:
-        return 'All Children';
+        return 'Approved Children';
     }
   }
 
@@ -134,9 +125,8 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         return 'No children pending registration';
       case 'accepted':
         return 'No approved children found';
-      case 'all':
       default:
-        return 'No children found';
+        return 'No approved children found';
     }
   }
 
@@ -147,30 +137,11 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         title: const Text('My Children'),
         backgroundColor: AppConstants.primaryGreen,
         foregroundColor: Colors.white,
-        actions: [
-          // Filter dropdown
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: DropdownButton<String>(
-              value: _selectedFilter,
-              dropdownColor: Colors.white,
-              style: const TextStyle(color: Colors.white),
-              underline: Container(),
-              items: ['all', 'pending', 'accepted'].map((String filter) {
-                return DropdownMenuItem<String>(
-                  value: filter,
-                  child: Text(
-                    _getFilterDisplayName(filter),
-                    style: const TextStyle(color: AppConstants.textPrimary),
-                  ),
-                );
-              }).toList(),
-              onChanged: _onFilterChanged,
-            ),
-          ),
-        ],
       ),
       body: _buildBody(),
+      bottomNavigationBar: const AppBottomNavigation(
+        current: BottomNavDestination.myChildren,
+      ),
     );
   }
 
@@ -209,6 +180,8 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _buildFilterControls(),
+            const SizedBox(height: 16),
             Text(
               '${_getFilterDisplayName(_selectedFilter)} (${_filteredChildren.length})',
               style: AppConstants.subheadingStyle,
@@ -354,6 +327,42 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildFilterControls() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Filter by status',
+          style: AppConstants.subheadingStyle.copyWith(fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilterChip(
+              label: const Text('Approved'),
+              selected: _selectedFilter == 'accepted',
+              onSelected: (selected) {
+                if (selected) {
+                  _onFilterChanged('accepted');
+                }
+              },
+            ),
+            FilterChip(
+              label: const Text('Pending'),
+              selected: _selectedFilter == 'pending',
+              onSelected: (selected) {
+                if (selected) {
+                  _onFilterChanged('pending');
+                }
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 

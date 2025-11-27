@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io' show Platform;
 import '../providers/auth_provider.dart';
 import '../providers/user_profile_provider.dart';
 import '../utils/constants.dart';
@@ -43,56 +45,157 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
       final success = await authProvider.login(
         _emailController.text.trim(),
         _passwordController.text,
+        showGlobalLoading: false,
       );
 
       if (success && mounted) {
-        // Load profile data after successful login and wait for it to complete
-        // This ensures profile is available immediately when home screen loads
-        await profileProvider.loadProfileData();
-
-        // Verify profile was loaded successfully
-        if (profileProvider.profile == null) {
-          debugPrint(
-            'Warning: Profile failed to load after login, retrying...',
-          );
-          // Retry once
+        authProvider.setGlobalLoading(true);
+        try {
           await profileProvider.loadProfileData();
-        }
 
-        // Get user_id from profile provider (now it's loaded)
-        final userId = profileProvider.profile?.userId;
-        final profileName = profileProvider.profile?.fullName ?? 'User';
-        debugPrint(
-          'Profile loaded after login - userId: $userId, name: $profileName',
-        );
+          if (profileProvider.profile == null) {
+            debugPrint('LoginScreen: profile null after load, retrying once...');
+            await profileProvider.loadProfileData();
+          }
 
-        // Schedule daily notification check after login
-        await NotificationService.scheduleDailyNotificationCheck();
-
-        // Navigate to home screen - profile is now loaded and will be available
-        // in the drawer immediately
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, AppConstants.homeRoute);
+          await NotificationService.scheduleDailyNotificationCheck();
+          if (mounted) {
+            await _checkBatteryOptimizationAfterLogin();
+            Navigator.pushReplacementNamed(context, AppConstants.homeRoute);
+          }
+        } finally {
+          authProvider.setGlobalLoading(false);
         }
       } else if (mounted) {
-        // Login failed but no exception was thrown
-        showErrorAlert('Login failed. Please check your credentials.');
+        await _showLoginErrorDialog(
+          'Incorrect email or password. Please check your credentials and try again.',
+        );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('LoginScreen: login error - $e\n$stackTrace');
+      final errorMessage = _extractLoginErrorMessage(e);
       if (mounted) {
-        // Show specific error message
-        String errorMessage = 'Login failed. Please check your credentials.';
-        if (e.toString().contains('Network')) {
-          errorMessage = 'Network error. Please check your connection.';
-        } else if (e.toString().isNotEmpty) {
-          errorMessage = e.toString().replaceFirst('Exception: ', '');
-        }
-        showErrorAlert(errorMessage);
+        await Future.microtask(() async {
+          if (mounted) {
+            await _showLoginErrorDialog(errorMessage);
+          }
+        });
       }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  String _extractLoginErrorMessage(Object error) {
+    final raw = error.toString();
+    if (raw.contains('Network error')) {
+      return 'Network error. Please check your connection.';
+    }
+    if (raw.contains('Incorrect') || raw.contains('invalid')) {
+      return 'Incorrect email or password. Please try again.';
+    }
+    if (raw.isNotEmpty) {
+      return raw.replaceFirst('Exception: ', '');
+    }
+    return 'Login failed. Please try again.';
+  }
+
+  Future<void> _showLoginErrorDialog(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.error_outline, color: AppConstants.errorRed),
+              const SizedBox(width: 12),
+              const Text('Login Failed'),
+            ],
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _checkBatteryOptimizationAfterLogin() async {
+    if (!Platform.isAndroid) {
+      return; // Only for Android
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final batteryCheckShown = prefs.getBool('battery_optimization_check_shown') ?? false;
+
+      // Only show once after login
+      if (batteryCheckShown) {
+        return;
+      }
+
+      // Check if battery optimization is disabled
+      final isBatteryOptimized = await NotificationService.isBatteryOptimizationDisabled();
+
+      if (!isBatteryOptimized && mounted) {
+        // Show dialog explaining battery optimization
+        final shouldOpen = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.battery_alert, color: AppConstants.primaryGreen),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text('Battery Optimization'),
+                ),
+              ],
+            ),
+            content: const Text(
+              'For notifications to work properly when the app is closed, '
+              'please disable battery optimization for Ebakunado.\n\n'
+              'This ensures you receive timely immunization reminders.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context, false);
+                },
+                child: const Text('Remind Me Later'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context, true);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppConstants.primaryGreen,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+
+        if (shouldOpen == true && mounted) {
+          // Open battery optimization settings
+          await NotificationService.openSystemBatterySettings();
+        }
+
+        // Mark as shown
+        await prefs.setBool('battery_optimization_check_shown', true);
+      }
+    } catch (e) {
+      debugPrint('Error checking battery optimization: $e');
     }
   }
 

@@ -29,6 +29,8 @@ class ChildSummaryItem {
   final String name;
   final String? upcomingDate;
   final String? upcomingVaccine;
+  final String? batchScheduleDate;
+  final String? scheduleSource;
   final bool nextIsCatchUp;
   final int missedCount;
   final ClosestMissed? closestMissed;
@@ -39,6 +41,8 @@ class ChildSummaryItem {
     required this.name,
     this.upcomingDate,
     this.upcomingVaccine,
+    this.batchScheduleDate,
+    this.scheduleSource,
     required this.nextIsCatchUp,
     required this.missedCount,
     this.closestMissed,
@@ -51,6 +55,8 @@ class ChildSummaryItem {
       name: json['name'] ?? '',
       upcomingDate: json['upcoming_date'],
       upcomingVaccine: json['upcoming_vaccine'],
+      batchScheduleDate: json['batch_schedule_date'],
+      scheduleSource: json['schedule_source'] ?? json['date_source'],
       nextIsCatchUp: json['next_is_catch_up'] == true,
       missedCount: json['missed_count'] ?? 0,
       closestMissed: json['closest_missed'] != null
@@ -59,6 +65,17 @@ class ChildSummaryItem {
       qrCode: json['qr_code'],
     );
   }
+
+  bool get hasBatchSchedule =>
+      batchScheduleDate != null && batchScheduleDate!.isNotEmpty;
+
+  // Only use batch schedule if scheduleSource confirms this vaccine uses batch
+  // This prevents using batch date from a different vaccine
+  bool get currentVaccineUsesBatch =>
+      scheduleSource?.toLowerCase() == 'batch' && hasBatchSchedule;
+
+  String? get effectiveScheduleDate =>
+      currentVaccineUsesBatch ? batchScheduleDate : upcomingDate;
 }
 
 class ChildrenSummaryResponse {

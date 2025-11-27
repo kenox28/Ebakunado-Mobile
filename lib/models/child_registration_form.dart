@@ -19,6 +19,8 @@ class ChildRegistrationRequest {
   final String? allergies;
   final String? lpm;
   final String? familyPlanning;
+  final String? dateNewbornScreening;
+  final String? placeNewbornScreening;
   final List<String> vaccinesReceived;
 
   const ChildRegistrationRequest({
@@ -40,6 +42,8 @@ class ChildRegistrationRequest {
     this.allergies,
     this.lpm,
     this.familyPlanning,
+    this.dateNewbornScreening,
+    this.placeNewbornScreening,
     this.vaccinesReceived = const [],
   });
 
@@ -71,6 +75,8 @@ class ChildRegistrationRequest {
     addIfPresent('allergies', allergies);
     addIfPresent('lpm', lpm);
     addIfPresent('family_planning', familyPlanning);
+    addIfPresent('date_newbornScreening', dateNewbornScreening);
+    addIfPresent('placeNewbornScreening', placeNewbornScreening);
 
     final normalizedVaccines = VaccineCatalog.normalizeOutgoingSelections(
       vaccinesReceived,

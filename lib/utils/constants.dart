@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  static const String baseUrl =
-      'http://192.168.43.73/ebakunado/'; // Website server - all endpoints point here
-  // 'https://mediumturquoise-porcupine-694169.hostingersite.com/Ebakunado/'; // Website server - all endpoints point here
+  static const String baseUrl = 'http://192.168.43.73/ebakunado/';
 
   // http://192.168.43.73/ebakunado/
   static const String apiKey = 'MY_SECRET_KEY';
@@ -15,97 +13,97 @@ class AppConstants {
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indkd2pkZHdya3h2aXB6YWJyb2VkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODA4MjkwNSwiZXhwIjoyMDczNjU4OTA1fQ.w3PdR-eP8WVK-H6l2sc9wjdo4ORx_J12Nd7DvMOV9_E';
 
   // Authentication Endpoints
-  static const String loginEndpoint = '/php/supabase/login.php';
-  static const String logoutEndpoint = '/php/supabase/users/logout.php';
+  static const String loginEndpoint = 'php/supabase/login.php';
+  static const String logoutEndpoint = 'php/supabase/users/logout.php';
 
   // Notification Endpoints
   static const String notificationsEndpoint =
-      '/php/supabase/users/get_user_notifications.php';
+      'php/supabase/users/get_user_notifications.php';
   static const String markNotificationReadEndpoint =
-      '/php/supabase/users/mark_notification_read.php';
+      'php/supabase/users/mark_notification_read.php';
   static const String markAllNotificationsReadEndpoint =
-      '/php/supabase/users/mark_notifications_read_all.php';
+      'php/supabase/users/mark_notifications_read_all.php';
   static const String dailyNotificationsEndpoint =
-      '/php/supabase/users/get_daily_notifications.php';
+      'php/supabase/users/get_daily_notifications.php';
 
   // Dashboard Endpoints
   static const String childrenSummaryEndpoint =
-      '/php/supabase/users/get_children_summary.php';
+      'php/supabase/users/get_children_summary.php';
   static const String acceptedChildEndpoint =
-      '/php/supabase/users/get_accepted_child.php';
+      'php/supabase/users/get_accepted_child.php';
   static const String dashboardSummaryEndpoint =
-      '/php/supabase/users/get_dashboard_summary.php';
+      'php/supabase/users/get_dashboard_summary.php';
   static const String childListEndpoint =
-      '/php/supabase/users/get_child_list.php';
+      'php/supabase/users/get_child_list.php';
 
   // Child Details Endpoints
   static const String childDetailsEndpoint =
-      '/php/supabase/users/get_child_details.php';
+      'php/supabase/users/get_child_details.php';
   static const String immunizationScheduleEndpoint =
-      '/php/supabase/users/get_immunization_schedule.php';
+      'php/supabase/users/get_immunization_schedule.php';
 
   // CHR Request Endpoints
   static const String requestChrDocEndpoint =
-      '/php/supabase/users/request_chr_doc.php';
+      'php/supabase/users/request_chr_doc.php';
   static const String getChrDocStatusEndpoint =
-      '/php/supabase/users/get_chr_doc_status.php';
+      'php/supabase/users/get_chr_doc_status.php';
   static const String getMyChrRequestsEndpoint =
-      '/php/supabase/users/get_my_chr_requests.php';
+      'php/supabase/users/get_my_chr_requests.php';
   static const String downloadChrDocEndpoint =
-      '/php/supabase/users/download_chr_doc.php';
+      'php/supabase/users/download_chr_doc.php';
 
   // Immunization Approval Endpoints
   static const String getImmunizationApprovalsEndpoint =
-      '/php/supabase/users/get_immunization_approvals.php';
+      'php/supabase/users/get_immunization_approvals.php';
   static const String downloadImmunizationCertificateEndpoint =
-      '/php/supabase/users/download_immunization_certificate.php';
+      'php/supabase/users/download_immunization_certificate.php';
 
   // Add Child Endpoints
-  static const String addChildEndpoint = '/php/supabase/users/add_child.php';
+  static const String addChildEndpoint = 'php/supabase/users/add_child.php';
   static const String claimChildWithCodeEndpoint =
-      '/php/supabase/users/claim_child_with_code.php';
+      'php/supabase/users/claim_child_with_code.php';
+  static const String previewChildByCodeEndpoint =
+      'php/supabase/users/preview_child_by_code.php';
   static const String requestImmunizationEndpoint =
-      '/php/supabase/users/request_immunization.php';
+      'php/supabase/users/request_immunization.php';
 
   // Baby Card PDF Generation Endpoints
   static const String getBabyCardLayoutEndpoint =
-      '/php/supabase/users/get_babycard_layout.php';
+      'php/supabase/users/get_babycard_layout.php';
   static const String getBabyCardBackgroundEndpoint =
-      '/assets/images/babycard.jpg';
+      'assets/images/babycard.jpg';
   static const String getMyImmunizationRecordsEndpoint =
-      '/php/supabase/users/get_my_immunization_records.php';
+      'php/supabase/users/get_my_immunization_records.php';
 
   // Settings/Profile Endpoints
   static const String getProfileDataEndpoint =
-      '/php/supabase/users/get_profile_data.php';
+      'php/supabase/users/get_profile_data.php';
   static const String updateProfileEndpoint =
-      '/php/supabase/users/update_profile.php';
+      'php/supabase/users/update_profile.php';
   static const String uploadProfilePhotoEndpoint =
-      '/php/supabase/users/upload_profile_photo.php';
+      'php/supabase/users/upload_profile_photo.php';
 
-  static const String sendOtpEndpoint = '/php/supabase/send_otp.php';
-  static const String verifyOtpEndpoint = '/php/supabase/verify_otp.php';
-  static const String getPlacesEndpoint = '/php/supabase/admin/get_places.php';
-  static const String createAccountEndpoint =
-      '/php/supabase/create_account.php';
-  static const String generateCsrfEndpoint = '/php/supabase/generate_csrf.php';
+  static const String sendOtpEndpoint = 'php/supabase/send_otp.php';
+  static const String verifyOtpEndpoint = 'php/supabase/verify_otp.php';
+  static const String getPlacesEndpoint = 'php/supabase/admin/get_places.php';
+  static const String createAccountEndpoint = 'php/supabase/create_account.php';
+  static const String generateCsrfEndpoint = 'php/supabase/generate_csrf.php';
 
   // Forgot Password Endpoints
   static const String forgotPasswordEndpoint =
-      '/php/supabase/forgot_password.php';
+      'php/supabase/forgot_password.php';
   static const String verifyResetOtpEndpoint =
-      '/php/supabase/verify_reset_otp.php';
-  static const String resetPasswordEndpoint =
-      '/php/supabase/reset_password.php';
+      'php/supabase/verify_reset_otp.php';
+  static const String resetPasswordEndpoint = 'php/supabase/reset_password.php';
 
   // Legacy Endpoints (keeping for compatibility)
-  static const String getUsersEndpoint = '/get_users.php';
-  static const String getMidwivesEndpoint = '/get_midwives.php';
-  static const String getBhwEndpoint = '/get_bhw.php';
-  static const String getImmunizationsEndpoint = '/get_immunizations.php';
-  static const String getAdminsEndpoint = '/get_admins.php';
-  static const String getSuperAdminsEndpoint = '/get_super_admins.php';
-  static const String getLogsEndpoint = '/get_logs.php';
+  static const String getUsersEndpoint = 'get_users.php';
+  static const String getMidwivesEndpoint = 'get_midwives.php';
+  static const String getBhwEndpoint = 'get_bhw.php';
+  static const String getImmunizationsEndpoint = 'get_immunizations.php';
+  static const String getAdminsEndpoint = 'get_admins.php';
+  static const String getSuperAdminsEndpoint = 'get_super_admins.php';
+  static const String getLogsEndpoint = 'get_logs.php';
 
   // Colors - Healthcare theme
   static const Color primaryGreen = Color(0xFF1A7B49); // Dark green primary

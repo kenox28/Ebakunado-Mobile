@@ -8,22 +8,200 @@ import 'qr_code_modal.dart';
 class DashboardContent extends StatelessWidget {
   const DashboardContent({super.key});
 
-  // Sort children by upcoming date (closest first), then by missed count
-  List<ChildSummaryItem> _sortChildrenByDate(List<ChildSummaryItem> children) {
+  List<ChildSummaryItem> _sortChildrenByDate(
+    List<ChildSummaryItem> children, {
+    required bool sortByMissedDate,
+  }) {
+    DateTime? parseDate(String? raw) {
+      if (raw == null || raw.isEmpty) return null;
+      return DateTime.tryParse(raw);
+    }
+
     return children..sort((a, b) {
-      // First sort by upcoming date (closest first)
-      if (a.upcomingDate != null && b.upcomingDate != null) {
-        final dateComparison = a.upcomingDate!.compareTo(b.upcomingDate!);
-        if (dateComparison != 0) return dateComparison;
-      } else if (a.upcomingDate != null) {
-        return -1; // a has date, b doesn't - a comes first
-      } else if (b.upcomingDate != null) {
-        return 1; // b has date, a doesn't - b comes first
+      DateTime? aDate;
+      DateTime? bDate;
+
+      if (sortByMissedDate) {
+        aDate =
+            parseDate(a.closestMissed?.scheduleDate) ??
+            parseDate(a.closestMissed?.catchUpDate);
+        bDate =
+            parseDate(b.closestMissed?.scheduleDate) ??
+            parseDate(b.closestMissed?.catchUpDate);
+      } else {
+        aDate = parseDate(a.effectiveScheduleDate);
+        bDate = parseDate(b.effectiveScheduleDate);
       }
 
-      // If dates are equal or both null, sort by missed count (higher first)
+      if (aDate != null && bDate != null) {
+        final comparison = aDate.compareTo(bDate);
+        if (comparison != 0) {
+          return comparison;
+        }
+      } else if (aDate != null) {
+        return -1;
+      } else if (bDate != null) {
+        return 1;
+      }
+
       return b.missedCount.compareTo(a.missedCount);
     });
+  }
+
+  List<ChildSummaryItem> _filterChildrenForView(
+    List<ChildSummaryItem> children,
+    String selectedFilter,
+  ) {
+    if (selectedFilter == 'missed') {
+      return children
+          .where(
+            (child) => child.missedCount > 0 || child.closestMissed != null,
+          )
+          .toList();
+    }
+    return children;
+  }
+
+  Widget _buildMissedChildCard(BuildContext context, ChildSummaryItem child) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppConstants.errorRed.withValues(alpha: 0.1),
+                  child: const Icon(
+                    Icons.child_care,
+                    color: AppConstants.errorRed,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    child.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (child.qrCode != null && child.qrCode!.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.qr_code_2,
+                      color: AppConstants.primaryGreen,
+                    ),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => QrCodeModal(
+                          childName: child.name,
+                          qrCodeUrl: child.qrCode!,
+                        ),
+                      );
+                    },
+                  ),
+                if (child.missedCount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppConstants.warningOrange,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Missed: ${child.missedCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (child.closestMissed != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppConstants.errorRed.withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${child.closestMissed!.vaccineName} (Dose ${child.closestMissed!.doseNumber})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (child.closestMissed!.scheduleDate != null)
+                      Text(
+                        'Scheduled: ${_formatDate(child.closestMissed!.scheduleDate)}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    if (child.closestMissed!.catchUpDate != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Catch Up: ${_formatDate(child.closestMissed!.catchUpDate)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppConstants.errorRed,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        AppConstants.upcomingScheduleRoute,
+                        arguments: {'baby_id': child.babyId},
+                      );
+                    },
+                    icon: const Icon(Icons.schedule),
+                    label: const Text('View Schedule'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppConstants.primaryGreen,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (child.missedCount > 1) ...[
+              const SizedBox(height: 6),
+              Text(
+                '...and ${child.missedCount - 1} more missed vaccination${child.missedCount - 1 > 1 ? 's' : ''}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   // Format date from "2025-01-15" to "Jan 15, 2025"
@@ -85,6 +263,12 @@ class DashboardContent extends StatelessWidget {
   Widget _buildKPISection(DashboardProvider provider) {
     final summary = provider.summary;
     final childrenSummary = provider.childrenSummary;
+    final totalMissed =
+        childrenSummary?.items.fold<int>(
+          0,
+          (sum, item) => sum + item.missedCount,
+        ) ??
+        0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,7 +314,7 @@ class DashboardContent extends StatelessWidget {
             Expanded(
               child: _KPICard(
                 title: 'Missed',
-                value: childrenSummary?.missedCount.toString() ?? '0',
+                value: (totalMissed).toString(),
                 icon: Icons.warning,
                 color: AppConstants.errorRed,
               ),
@@ -192,6 +376,29 @@ class DashboardContent extends StatelessWidget {
       );
     }
 
+    final filteredChildren = _filterChildrenForView(
+      childrenSummary.items,
+      provider.selectedFilter,
+    );
+    if (filteredChildren.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          children: [
+            Icon(Icons.event_busy, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              provider.selectedFilter == 'missed'
+                  ? 'No missed immunizations found'
+                  : 'No records found',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -202,13 +409,20 @@ class DashboardContent extends StatelessWidget {
         const SizedBox(height: 12),
         Builder(
           builder: (context) {
-            final sortedChildren = _sortChildrenByDate(childrenSummary.items);
+            final isUpcomingView = provider.selectedFilter == 'upcoming';
+            final sortedChildren = _sortChildrenByDate(
+              filteredChildren,
+              sortByMissedDate: !isUpcomingView,
+            );
             return ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: sortedChildren.length,
               itemBuilder: (context, index) {
                 final child = sortedChildren[index];
+                if (!isUpcomingView) {
+                  return _buildMissedChildCard(context, child);
+                }
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: Padding(
@@ -218,8 +432,7 @@ class DashboardContent extends StatelessWidget {
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundColor:
-                                  provider.selectedFilter == 'upcoming'
+                              backgroundColor: isUpcomingView
                                   ? AppConstants.successGreen.withValues(
                                       alpha: 0.1,
                                     )
@@ -228,7 +441,7 @@ class DashboardContent extends StatelessWidget {
                                     ),
                               child: Icon(
                                 Icons.child_care,
-                                color: provider.selectedFilter == 'upcoming'
+                                color: isUpcomingView
                                     ? AppConstants.successGreen
                                     : AppConstants.errorRed,
                               ),
@@ -265,105 +478,47 @@ class DashboardContent extends StatelessWidget {
                                             );
                                           },
                                         ),
-                                      if (child.missedCount > 0 &&
-                                          provider.selectedFilter == 'missed')
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppConstants.warningOrange,
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Missed: ${child.missedCount}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
-                                  if (child.upcomingVaccine != null)
-                                    Text(
-                                      'Vaccine: ${child.upcomingVaccine}',
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  if (child.upcomingDate != null)
-                                    Text(
-                                      'Date: ${_formatDate(child.upcomingDate)}',
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  // Display missed vaccination details when filter is 'missed'
-                                  if (provider.selectedFilter == 'missed' &&
-                                      child.closestMissed != null) ...[
-                                    const SizedBox(height: 8),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[100],
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppConstants.errorRed
-                                              .withOpacity(0.3),
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            '${child.closestMissed!.vaccineName} (Dose ${child.closestMissed!.doseNumber})',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          if (child
-                                                  .closestMissed!
-                                                  .scheduleDate !=
-                                              null)
-                                            Text(
-                                              'Scheduled: ${_formatDate(child.closestMissed!.scheduleDate)}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          if (child
-                                                  .closestMissed!
-                                                  .catchUpDate !=
-                                              null) ...[
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Catch Up: ${_formatDate(child.closestMissed!.catchUpDate)}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: AppConstants.errorRed,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    if (child.missedCount > 1) ...[
-                                      const SizedBox(height: 4),
+                                  if (isUpcomingView) ...[
+                                    if (child.upcomingVaccine != null &&
+                                        child.upcomingVaccine!.isNotEmpty)
                                       Text(
-                                        '...and ${child.missedCount - 1} more missed vaccination${child.missedCount - 1 > 1 ? 's' : ''}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey[600],
-                                          fontStyle: FontStyle.italic,
+                                        'Vaccine: ${child.upcomingVaccine}',
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    if (child.scheduleSource?.toLowerCase() ==
+                                            'batch' &&
+                                        child.batchScheduleDate != null &&
+                                        child
+                                            .batchScheduleDate!
+                                            .isNotEmpty) ...[
+                                      Text(
+                                        'Batch Schedule: ${_formatDate(child.batchScheduleDate)}',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ],
+                                    if (child.upcomingDate != null &&
+                                        child.upcomingDate!.isNotEmpty)
+                                      Text(
+                                        child.scheduleSource?.toLowerCase() ==
+                                                'batch'
+                                            ? 'Guideline Date: ${_formatDate(child.upcomingDate)}'
+                                            : 'Date: ${_formatDate(child.upcomingDate)}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color:
+                                              child.scheduleSource
+                                                      ?.toLowerCase() ==
+                                                  'batch'
+                                              ? AppConstants.textSecondary
+                                              : null,
+                                        ),
+                                      ),
                                   ],
                                 ],
                               ),
@@ -385,7 +540,7 @@ class DashboardContent extends StatelessWidget {
                                 icon: const Icon(Icons.schedule, size: 16),
                                 label: const Text('View Schedule'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppConstants.mediumGreen,
+                                  backgroundColor: AppConstants.primaryGreen,
                                   foregroundColor: Colors.white,
                                 ),
                               ),

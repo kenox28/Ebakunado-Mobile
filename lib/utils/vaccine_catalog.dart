@@ -53,6 +53,9 @@ class VaccineCatalog {
     'OPV - 1st',
     'OPV - 2nd',
     'OPV - 3rd',
+    'IPV - 1st',
+    'IPV - 2nd',
+    'IPV - 3rd',
     'PCV - 1st',
     'PCV - 2nd',
     'PCV - 3rd',
@@ -85,6 +88,9 @@ class VaccineCatalog {
     VaccineOption(payloadName: 'OPV - 1st', displayLabel: 'OPV – 1st dose'),
     VaccineOption(payloadName: 'OPV - 2nd', displayLabel: 'OPV – 2nd dose'),
     VaccineOption(payloadName: 'OPV - 3rd', displayLabel: 'OPV – 3rd dose'),
+    VaccineOption(payloadName: 'IPV - 1st', displayLabel: 'IPV – 1st dose'),
+    VaccineOption(payloadName: 'IPV - 2nd', displayLabel: 'IPV – 2nd dose'),
+    VaccineOption(payloadName: 'IPV - 3rd', displayLabel: 'IPV – 3rd dose'),
     VaccineOption(payloadName: 'PCV - 1st', displayLabel: 'PCV – 1st dose'),
     VaccineOption(payloadName: 'PCV - 2nd', displayLabel: 'PCV – 2nd dose'),
     VaccineOption(payloadName: 'PCV - 3rd', displayLabel: 'PCV – 3rd dose'),
@@ -113,7 +119,6 @@ class VaccineCatalog {
   static const Set<String> _ignoredLegacyNames = {
     'rota virus vaccine - 1st',
     'rota virus vaccine - 2nd',
-    'ipv',
   };
 
   static final Map<String, String> _acceptedLookup = {
@@ -145,6 +150,9 @@ class VaccineCatalog {
     'OPV - 1st': _SeriesMeta(seriesLabel: 'OPV', totalDoses: 3, doseNumber: 1),
     'OPV - 2nd': _SeriesMeta(seriesLabel: 'OPV', totalDoses: 3, doseNumber: 2),
     'OPV - 3rd': _SeriesMeta(seriesLabel: 'OPV', totalDoses: 3, doseNumber: 3),
+    'IPV - 1st': _SeriesMeta(seriesLabel: 'IPV', totalDoses: 3, doseNumber: 1),
+    'IPV - 2nd': _SeriesMeta(seriesLabel: 'IPV', totalDoses: 3, doseNumber: 2),
+    'IPV - 3rd': _SeriesMeta(seriesLabel: 'IPV', totalDoses: 3, doseNumber: 3),
     'PCV - 1st': _SeriesMeta(seriesLabel: 'PCV', totalDoses: 3, doseNumber: 1),
     'PCV - 2nd': _SeriesMeta(seriesLabel: 'PCV', totalDoses: 3, doseNumber: 2),
     'PCV - 3rd': _SeriesMeta(seriesLabel: 'PCV', totalDoses: 3, doseNumber: 3),

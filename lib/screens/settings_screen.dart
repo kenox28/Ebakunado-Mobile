@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_client.dart';
+import '../services/notification_service.dart';
 import '../models/user_profile.dart';
 import '../providers/user_profile_provider.dart';
 import '../utils/constants.dart';
@@ -27,9 +28,15 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isLoading = true;
   bool _isUpdating = false;
   bool _isUploadingPhoto = false;
+  bool _isLoadingNotificationStatus = false;
 
   // Profile data
   UserProfile? _profile;
+
+  // Notification status
+  TimeOfDay? _customNotificationTime;
+  bool _notificationsEnabled = false;
+  bool _batteryUnrestricted = false;
 
   // Form controllers
   final _fnameController = TextEditingController();
@@ -55,6 +62,31 @@ class _SettingsScreenState extends State<SettingsScreen>
   void initState() {
     super.initState();
     _loadProfileData();
+    _loadNotificationStatus();
+  }
+
+  Future<void> _loadNotificationStatus() async {
+    setState(() => _isLoadingNotificationStatus = true);
+    try {
+      final customTime = await NotificationService.getCustomNotificationTime();
+      final notifEnabled = await NotificationService.areNotificationsEnabled();
+      final batteryOk =
+          await NotificationService.isBatteryOptimizationDisabled();
+
+      if (mounted) {
+        setState(() {
+          _customNotificationTime = customTime;
+          _notificationsEnabled = notifEnabled;
+          _batteryUnrestricted = batteryOk;
+          _isLoadingNotificationStatus = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading notification status: $e');
+      if (mounted) {
+        setState(() => _isLoadingNotificationStatus = false);
+      }
+    }
   }
 
   @override
@@ -136,17 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Notifications & Permissions entry
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.settings_applications),
-                title: const Text('Notifications & Permissions'),
-                subtitle: const Text('Set daily time and open phone settings'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.pushNamed(context, '/app-notifications'),
-              ),
-            ),
-
             // Profile Header Section
             _buildProfileHeader(),
 
@@ -157,8 +178,18 @@ class _SettingsScreenState extends State<SettingsScreen>
 
             const SizedBox(height: 24),
 
-            // Password Change Section
+            // Security/Password Section
             _buildPasswordSection(),
+
+            const SizedBox(height: 24),
+
+            // Notifications & Permissions Section
+            _buildNotificationsSection(),
+
+            const SizedBox(height: 24),
+
+            // App Settings Section
+            _buildAppSettingsSection(),
 
             const SizedBox(height: 24),
           ],
@@ -176,94 +207,123 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: Padding(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Profile Avatar with Camera Overlay
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: AppConstants.primaryGreen.withValues(
-                    alpha: 0.1,
+            SizedBox(
+              width: 90,
+              height: 90,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundColor: AppConstants.primaryGreen.withValues(
+                      alpha: 0.1,
+                    ),
+                    backgroundImage: _selectedPhoto != null
+                        ? FileImage(_selectedPhoto!)
+                        : (_profile?.profileImg != null &&
+                              _profile!.profileImg!.isNotEmpty)
+                        ? NetworkImage(_profile!.profileImg!)
+                        : null,
+                    child:
+                        _selectedPhoto == null &&
+                            (_profile?.profileImg == null ||
+                                _profile!.profileImg!.isEmpty)
+                        ? const Icon(
+                            Icons.person,
+                            size: 40,
+                            color: AppConstants.primaryGreen,
+                          )
+                        : null,
                   ),
-                  backgroundImage: _selectedPhoto != null
-                      ? FileImage(_selectedPhoto!)
-                      : (_profile?.profileImg != null &&
-                            _profile!.profileImg!.isNotEmpty)
-                      ? NetworkImage(_profile!.profileImg!)
-                      : null,
-                  child:
-                      _selectedPhoto == null &&
-                          (_profile?.profileImg == null ||
-                              _profile!.profileImg!.isEmpty)
-                      ? const Icon(
-                          Icons.person,
-                          size: 40,
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _isUploadingPhoto ? null : _showPhotoOptions,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
                           color: AppConstants.primaryGreen,
-                        )
-                      : null,
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: _isUploadingPhoto ? null : _showPhotoOptions,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: AppConstants.primaryGreen,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      child: _isUploadingPhoto
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: _isUploadingPhoto
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
                                 ),
+                              )
+                            : const Icon(
+                                Icons.camera_alt,
+                                size: 16,
+                                color: Colors.white,
                               ),
-                            )
-                          : const Icon(
-                              Icons.camera_alt,
-                              size: 16,
-                              color: Colors.white,
-                            ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
 
             const SizedBox(height: 16),
 
             // Display Information
-            Text(
-              _profile?.displayName ?? 'User',
-              style: AppConstants.subheadingStyle.copyWith(
-                fontWeight: FontWeight.bold,
+            SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _profile?.displayName ?? 'User',
+                    style: AppConstants.subheadingStyle.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppConstants.primaryGreen.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _profile?.role.toUpperCase() ?? 'USER',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppConstants.primaryBlue,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _profile?.email ?? '',
+                    style: AppConstants.captionStyle,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppConstants.primaryGreen.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                _profile?.role.toUpperCase() ?? 'USER',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: AppConstants.primaryBlue,
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(_profile?.email ?? '', style: AppConstants.captionStyle),
           ],
         ),
       ),
@@ -281,11 +341,17 @@ class _SettingsScreenState extends State<SettingsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Profile Information',
-              style: AppConstants.subheadingStyle.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              children: [
+                const Icon(Icons.person, color: AppConstants.primaryGreen),
+                const SizedBox(width: 8),
+                Text(
+                  'Profile Information',
+                  style: AppConstants.subheadingStyle.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 
@@ -462,7 +528,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const Icon(Icons.lock, color: AppConstants.primaryGreen),
                 const SizedBox(width: 8),
                 Text(
-                  'Change Password',
+                  'Security',
                   style: AppConstants.subheadingStyle.copyWith(
                     fontWeight: FontWeight.bold,
                     color: AppConstants.primaryGreen,
@@ -485,6 +551,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            Text('Change Password', style: AppConstants.captionStyle),
 
             if (_showPasswordFields) ...[
               const SizedBox(height: 16),
@@ -513,6 +581,217 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildNotificationsSection() {
+    return Card(
+      elevation: AppConstants.cardElevation,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+      ),
+      child: InkWell(
+        onTap: () async {
+          await Navigator.pushNamed(context, '/app-notifications');
+          if (mounted) {
+            await _loadNotificationStatus();
+          }
+        },
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.defaultPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.notifications_active,
+                    color: AppConstants.primaryGreen,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Notifications & Permissions',
+                      style: AppConstants.subheadingStyle.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.chevron_right, color: Colors.grey),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_isLoadingNotificationStatus)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else ...[
+                _buildNotificationStatusItem(
+                  icon: Icons.access_time,
+                  label: 'Daily Check Time',
+                  value: _customNotificationTime != null
+                      ? _formatTime(_customNotificationTime!)
+                      : 'Not set',
+                  status: _customNotificationTime != null ? 'ok' : 'warning',
+                ),
+                const Divider(height: 24),
+                _buildNotificationStatusItem(
+                  icon: Icons.notifications,
+                  label: 'Notifications',
+                  value: _notificationsEnabled ? 'Allowed' : 'Blocked',
+                  status: _notificationsEnabled ? 'ok' : 'error',
+                ),
+                const SizedBox(height: 8),
+                _buildNotificationStatusItem(
+                  icon: Icons.battery_saver,
+                  label: 'Battery Optimization',
+                  value: _batteryUnrestricted ? 'Unrestricted' : 'Restricted',
+                  status: _batteryUnrestricted ? 'ok' : 'warning',
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationStatusItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required String status,
+  }) {
+    Color statusColor;
+    IconData statusIcon;
+    if (status == 'ok') {
+      statusColor = AppConstants.successGreen;
+      statusIcon = Icons.check_circle;
+    } else if (status == 'warning') {
+      statusColor = Colors.orange;
+      statusIcon = Icons.warning;
+    } else {
+      statusColor = AppConstants.errorRed;
+      statusIcon = Icons.error;
+    }
+
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(statusIcon, size: 16, color: statusColor),
+                  const SizedBox(width: 4),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: statusColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAppSettingsSection() {
+    return Card(
+      elevation: AppConstants.cardElevation,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.defaultPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  color: AppConstants.primaryGreen,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'App Information',
+                  style: AppConstants.subheadingStyle.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildAppInfo(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppInfo() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.info_outline, size: 20, color: Colors.grey),
+            const SizedBox(width: 12),
+            const Text(
+              'App Information',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Version',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            Text(
+              '1.0.0',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppConstants.primaryGreen,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final now = DateTime.now();
+    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
+    return TimeOfDay.fromDateTime(dt).format(context);
   }
 
   Widget _buildTextFormField({
