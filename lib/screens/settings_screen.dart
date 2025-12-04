@@ -11,6 +11,7 @@ import '../providers/user_profile_provider.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../mixins/animated_alert_mixin.dart';
+import '../widgets/app_drawer.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -129,6 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           ],
         ),
+        drawer: const AppDrawer(),
         body: _buildBody(),
       ),
     );
@@ -720,35 +722,35 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Widget _buildAppSettingsSection() {
     return Card(
-      elevation: AppConstants.cardElevation,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppConstants.defaultPadding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+            elevation: AppConstants.cardElevation,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+            ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.defaultPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.info_outline,
-                  color: AppConstants.primaryGreen,
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: AppConstants.primaryGreen,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'App Information',
+                      style: AppConstants.subheadingStyle.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'App Information',
-                  style: AppConstants.subheadingStyle.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                const SizedBox(height: 16),
+                _buildAppInfo(),
               ],
             ),
-            const SizedBox(height: 16),
-            _buildAppInfo(),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -756,17 +758,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Icon(Icons.info_outline, size: 20, color: Colors.grey),
-            const SizedBox(width: 12),
-            const Text(
-              'App Information',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [

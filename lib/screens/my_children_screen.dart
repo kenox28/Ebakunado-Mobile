@@ -6,6 +6,7 @@ import '../models/child_list_item.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../widgets/app_bottom_navigation.dart';
+import '../widgets/app_drawer.dart';
 
 class MyChildrenScreen extends StatefulWidget {
   const MyChildrenScreen({super.key});
@@ -138,6 +139,7 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         backgroundColor: AppConstants.primaryGreen,
         foregroundColor: Colors.white,
       ),
+      drawer: const AppDrawer(),
       body: _buildBody(),
       bottomNavigationBar: const AppBottomNavigation(
         current: BottomNavDestination.myChildren,

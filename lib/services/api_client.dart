@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:path_provider/path_provider.dart';
@@ -53,6 +54,36 @@ class ApiClient {
           'Accept': 'application/json',
         },
         responseType: ResponseType.json, // Force JSON parsing
+      ),
+    );
+
+    // Handle SSL certificate validation - ALWAYS ALLOW FOR RELEASE BUILD FIX
+    // This is critical for release builds to work
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+            (HttpClient client) {
+              // ALWAYS allow all certificates - required for release builds
+              client.badCertificateCallback =
+                  (X509Certificate cert, String host, int port) {
+                    return true; // Always allow - fixes release build blocking
+                  };
+              return client;
+            };
+      } catch (e) {
+        // If adapter setup fails, continue anyway
+      }
+    }
+
+    // Add request interceptor to log all requests (BEFORE cookie manager)
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          debugPrint('🌐 Making request to: ${options.uri}');
+          debugPrint('🌐 Full URL: ${options.baseUrl}${options.path}');
+          debugPrint('🌐 Method: ${options.method}');
+          handler.next(options);
+        },
       ),
     );
 
@@ -116,6 +147,9 @@ class ApiClient {
 
   // Logout
   Future<Response> logout() async {
+    // Ensure Dio and cookies are initialized before making the request.
+    // This is important for the very first logout after fresh install.
+    await _ensureInitialized();
     return await _dio.post(AppConstants.logoutEndpoint);
   }
 

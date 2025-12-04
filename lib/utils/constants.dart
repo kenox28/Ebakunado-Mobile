@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String baseUrl = 'http://192.168.43.73/ebakunado/';
-
+  // https://ebakunado.com/
   // http://192.168.43.73/ebakunado/
   static const String apiKey = 'MY_SECRET_KEY';
   static const int requestTimeout = 30; // seconds
@@ -13,7 +13,7 @@ class AppConstants {
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indkd2pkZHdya3h2aXB6YWJyb2VkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODA4MjkwNSwiZXhwIjoyMDczNjU4OTA1fQ.w3PdR-eP8WVK-H6l2sc9wjdo4ORx_J12Nd7DvMOV9_E';
 
   // Authentication Endpoints
-  static const String loginEndpoint = 'php/supabase/login.php';
+  static const String loginEndpoint = 'php/supabase/login_mobile_user.php';
   static const String logoutEndpoint = 'php/supabase/users/logout.php';
 
   // Notification Endpoints

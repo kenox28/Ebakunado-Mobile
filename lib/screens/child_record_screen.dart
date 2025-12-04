@@ -7,6 +7,7 @@ import '../models/immunization.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../mixins/animated_alert_mixin.dart';
+import '../widgets/app_drawer.dart';
 
 class ChildRecordScreen extends StatefulWidget {
   final String babyId;
@@ -101,13 +102,21 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
           response.data,
         );
         final allVaccinations = scheduleResponse.data;
-        // Filter vaccinations for this child and get only TAKEN ones
+        // Filter vaccinations for this child
+        final childVaccinations = allVaccinations
+            .where((v) => v.babyId == widget.babyId)
+            .toList();
+        
+        // Calculate next_schedule_date for each vaccination
+        final vaccinationsWithNextSchedule = _calculateNextScheduleDates(
+          childVaccinations,
+        );
+        
+        // Filter to get only TAKEN ones
         setState(() {
-          _vaccinations = allVaccinations
+          _vaccinations = vaccinationsWithNextSchedule
               .where(
-                (v) =>
-                    v.babyId == widget.babyId &&
-                    (v.isTaken || v.status == 'taken'),
+                (v) => v.isTaken || v.status == 'taken',
               )
               .toList();
           _isLoadingVaccinations = false;
@@ -116,6 +125,134 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
     } catch (e) {
       setState(() => _isLoadingVaccinations = false);
     }
+  }
+
+  /// Calculate next_schedule_date for each vaccination based on canonical vaccine order
+  /// This matches the JavaScript logic from the web version
+  List<ImmunizationItem> _calculateNextScheduleDates(
+    List<ImmunizationItem> vaccinations,
+  ) {
+    // Canonical vaccine order (matching JavaScript)
+    final canonicalOrder = [
+      'bcg',
+      'hepb_birth',
+      'penta1',
+      'opv1',
+      'pcv1',
+      'rota1',
+      'penta2',
+      'opv2',
+      'pcv2',
+      'rota2',
+      'penta3',
+      'opv3',
+      'pcv3',
+      'mcv1',
+      'mcv2',
+    ];
+
+    // Map vaccine names to canonical keys
+    String? getCanonicalKey(String vaccineName) {
+      final name = vaccineName.toLowerCase().trim();
+      if (name.contains('bcg')) return 'bcg';
+      if (name.contains('hepb') || 
+          name.contains('hepatitis b') || 
+          name.contains('hepab1')) return 'hepb_birth';
+      if (name.contains('penta') && name.contains('1st')) return 'penta1';
+      if (name.contains('penta') && name.contains('2nd')) return 'penta2';
+      if (name.contains('penta') && name.contains('3rd')) return 'penta3';
+      if (name.contains('opv') && name.contains('1st')) return 'opv1';
+      if (name.contains('opv') && name.contains('2nd')) return 'opv2';
+      if (name.contains('opv') && name.contains('3rd')) return 'opv3';
+      if (name.contains('pcv') && name.contains('1st')) return 'pcv1';
+      if (name.contains('pcv') && name.contains('2nd')) return 'pcv2';
+      if (name.contains('pcv') && name.contains('3rd')) return 'pcv3';
+      if (name.contains('rota') && name.contains('1st')) return 'rota1';
+      if (name.contains('rota') && name.contains('2nd')) return 'rota2';
+      if (name.contains('mcv1') || name.contains('amv')) return 'mcv1';
+      if (name.contains('mcv2') || name.contains('mmr')) return 'mcv2';
+      return null;
+    }
+
+    // Get due date with priority: batch_schedule_date > catch_up_date > schedule_date
+    String? getDueDate(ImmunizationItem item) {
+      if (item.batchScheduleDate != null && item.batchScheduleDate!.isNotEmpty) {
+        return item.batchScheduleDate;
+      }
+      if (item.catchUpDate != null && item.catchUpDate!.isNotEmpty) {
+        return item.catchUpDate;
+      }
+      if (item.scheduleDate.isNotEmpty) {
+        return item.scheduleDate;
+      }
+      return null;
+    }
+
+    // Group vaccinations by canonical key
+    final Map<String, List<ImmunizationItem>> byKey = {};
+    for (final vac in vaccinations) {
+      final key = getCanonicalKey(vac.vaccineName);
+      if (key != null) {
+        byKey.putIfAbsent(key, () => []).add(vac);
+      }
+    }
+
+    // Calculate next schedule for each vaccination
+    return vaccinations.map((currentVac) {
+      final currentKey = getCanonicalKey(currentVac.vaccineName);
+      if (currentKey == null) return currentVac;
+
+      // Find index in canonical order
+      final currentIndex = canonicalOrder.indexOf(currentKey);
+      if (currentIndex == -1) return currentVac;
+
+      // Find next vaccine in sequence
+      ImmunizationItem? nextRecord;
+      for (int i = currentIndex + 1; i < canonicalOrder.length; i++) {
+        final nextKey = canonicalOrder[i];
+        final nextVaccinations = byKey[nextKey];
+        if (nextVaccinations != null && nextVaccinations.isNotEmpty) {
+          // Priority: upcoming > taken > any
+          nextRecord = nextVaccinations.firstWhere(
+            (v) => v.isScheduled || v.status == 'scheduled',
+            orElse: () => nextVaccinations.firstWhere(
+              (v) => v.isTaken || v.status == 'taken',
+              orElse: () => nextVaccinations.first,
+            ),
+          );
+          break;
+        }
+      }
+
+      // Calculate next schedule date
+      String? nextScheduleDate;
+      if (nextRecord != null) {
+        // Priority: batch_schedule_date > catch_up_date > schedule_date
+        nextScheduleDate = getDueDate(nextRecord);
+      }
+
+      // Create new instance with next_schedule_date
+      return ImmunizationItem(
+        id: currentVac.id,
+        babyId: currentVac.babyId,
+        childName: currentVac.childName,
+        vaccineName: currentVac.vaccineName,
+        doseNumber: currentVac.doseNumber,
+        scheduleDate: currentVac.scheduleDate,
+        batchScheduleDate: currentVac.batchScheduleDate,
+        catchUpDate: currentVac.catchUpDate,
+        dateGiven: currentVac.dateGiven,
+        status: currentVac.status,
+        originalVaccineName: currentVac.originalVaccineName,
+        doseInfo: currentVac.doseInfo,
+        isSuppressed: currentVac.isSuppressed,
+        height: currentVac.height,
+        weight: currentVac.weight,
+        muac: currentVac.muac,
+        remarks: currentVac.remarks,
+        nextScheduleDate: nextScheduleDate,
+      );
+    }).toList();
   }
 
   @override
@@ -127,6 +264,7 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
           backgroundColor: AppConstants.primaryGreen,
           foregroundColor: Colors.white,
         ),
+        drawer: const AppDrawer(),
         body: _buildBody(),
       ),
     );
@@ -485,176 +623,102 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Request Certificates', style: AppConstants.subheadingStyle),
+            Text('Request Baby Card & Transfer', style: AppConstants.subheadingStyle),
             const SizedBox(height: 12),
             Text(
-              'Request official certificates for ${_childDetail!.name}',
+              'Request official documents for ${_childDetail!.name}',
               style: AppConstants.captionStyle,
             ),
             const SizedBox(height: 16),
-            // Responsive button layout
-            LayoutBuilder(
-              builder: (context, constraints) {
-                // If screen is too narrow, stack buttons vertically
-                if (constraints.maxWidth < 400) {
-                  return Column(
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _requestingTypes.contains('school')
-                              ? null
-                              : () => _requestChrCertificate('school'),
-                          icon: _requestingTypes.contains('school')
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      AppConstants.primaryGreen,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.school, size: 18),
-                          label: Text(
-                            _requestingTypes.contains('school')
-                                ? 'Requesting...'
-                                : 'Request School Certificate',
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppConstants.primaryGreen,
-                            side: const BorderSide(
-                              color: AppConstants.primaryGreen,
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.borderRadius,
+            // Always show buttons in one row
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _requestingTypes.contains('school')
+                        ? null
+                        : () => _requestChrCertificate('school'),
+                    icon: _requestingTypes.contains('school')
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppConstants.primaryGreen,
                               ),
                             ),
-                          ),
+                          )
+                        : const Icon(Icons.school, size: 18),
+                    label: SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _requestingTypes.contains('school')
+                              ? 'Requesting...'
+                              : 'Request Baby Card',
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _requestingTypes.contains('transfer')
-                              ? null
-                              : () => _requestChrCertificate('transfer'),
-                          icon: _requestingTypes.contains('transfer')
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.swap_horiz, size: 18),
-                          label: Text(
-                            _requestingTypes.contains('transfer')
-                                ? 'Requesting...'
-                                : 'Request Transfer Certificate',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppConstants.mediumGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.borderRadius,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppConstants.primaryGreen,
+                      side: const BorderSide(
+                        color: AppConstants.primaryGreen,
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.borderRadius,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _requestingTypes.contains('transfer')
+                        ? null
+                        : () => _requestChrCertificate('transfer'),
+                    icon: _requestingTypes.contains('transfer')
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
                               ),
                             ),
-                          ),
+                          )
+                        : const Icon(Icons.swap_horiz, size: 18),
+                    label: SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _requestingTypes.contains('transfer')
+                              ? 'Requesting...'
+                              : 'Request Transfer',
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                    ],
-                  );
-                } else {
-                  // Wide screen - use horizontal layout
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _requestingTypes.contains('school')
-                              ? null
-                              : () => _requestChrCertificate('school'),
-                          icon: _requestingTypes.contains('school')
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      AppConstants.primaryGreen,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.school, size: 18),
-                          label: Text(
-                            _requestingTypes.contains('school')
-                                ? 'Requesting...'
-                                : 'Request School Certificate',
-                            textAlign: TextAlign.center,
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppConstants.primaryGreen,
-                            side: const BorderSide(
-                              color: AppConstants.primaryGreen,
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.borderRadius,
-                              ),
-                            ),
-                          ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppConstants.mediumGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.borderRadius,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _requestingTypes.contains('transfer')
-                              ? null
-                              : () => _requestChrCertificate('transfer'),
-                          icon: _requestingTypes.contains('transfer')
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.swap_horiz, size: 18),
-                          label: Text(
-                            _requestingTypes.contains('transfer')
-                                ? 'Requesting...'
-                                : 'Request Transfer Certificate',
-                            textAlign: TextAlign.center,
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppConstants.mediumGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.borderRadius,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }
-              },
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -844,6 +908,10 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                   : '';
               final vaccineName = vaccination.vaccineWithDose;
               final status = vaccination.status.toUpperCase();
+              final nextScheduleFormatted = vaccination.nextScheduleDate != null &&
+                      vaccination.nextScheduleDate!.isNotEmpty
+                  ? _formatDateForTable(vaccination.nextScheduleDate!)
+                  : '-';
 
               return DataRow(
                 cells: [
@@ -870,22 +938,34 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                       ),
                     ),
                   ),
-                  const DataCell(
+                  // HT (Height) column
+                  DataCell(
                     SizedBox(
                       width: 40,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Text(
+                        _formatHeight(vaccination.height),
+                        style: const TextStyle(fontSize: 10),
+                      ),
                     ),
                   ),
-                  const DataCell(
+                  // WT (Weight) column
+                  DataCell(
                     SizedBox(
                       width: 40,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Text(
+                        _formatWeight(vaccination.weight),
+                        style: const TextStyle(fontSize: 10),
+                      ),
                     ),
                   ),
-                  const DataCell(
+                  // ME/AC (MUAC) column
+                  DataCell(
                     SizedBox(
                       width: 60,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Text(
+                        _formatMuac(vaccination.muac),
+                        style: const TextStyle(fontSize: 10),
+                      ),
                     ),
                   ),
                   DataCell(
@@ -903,28 +983,43 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                       ),
                     ),
                   ),
+                  // Cond. column (empty for now)
                   const DataCell(
                     SizedBox(
                       width: 60,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Text('-', style: TextStyle(fontSize: 10)),
                     ),
                   ),
+                  // Advice column (empty for now)
                   const DataCell(
                     SizedBox(
                       width: 80,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Text('-', style: TextStyle(fontSize: 10)),
                     ),
                   ),
-                  const DataCell(
+                  // Next Sched column
+                  DataCell(
                     SizedBox(
                       width: 90,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Text(
+                        nextScheduleFormatted,
+                        style: const TextStyle(fontSize: 10),
+                      ),
                     ),
                   ),
-                  const DataCell(
+                  // Remarks column
+                  DataCell(
                     SizedBox(
                       width: 80,
-                      child: Text('', style: TextStyle(fontSize: 10)),
+                      child: Tooltip(
+                        message: _formatRemarks(vaccination.remarks),
+                        child: Text(
+                          _formatRemarks(vaccination.remarks).length > 12
+                              ? '${_formatRemarks(vaccination.remarks).substring(0, 12)}...'
+                              : _formatRemarks(vaccination.remarks),
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -947,5 +1042,25 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
     } catch (e) {
       return '';
     }
+  }
+
+  String _formatHeight(double? height) {
+    if (height == null) return '-';
+    return '${height.toStringAsFixed(1)} cm';
+  }
+
+  String _formatWeight(double? weight) {
+    if (weight == null) return '-';
+    return '${weight.toStringAsFixed(1)} kg';
+  }
+
+  String _formatMuac(String? muac) {
+    if (muac == null || muac.isEmpty) return '-';
+    return muac;
+  }
+
+  String _formatRemarks(String? remarks) {
+    if (remarks == null || remarks.isEmpty) return '-';
+    return remarks;
   }
 }

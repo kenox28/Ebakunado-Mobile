@@ -7,12 +7,18 @@ class ImmunizationItem {
   final String vaccineName;
   final int doseNumber;
   final String scheduleDate;
+  final String? batchScheduleDate;
   final String? catchUpDate;
   final String? dateGiven;
   final String status;
   final String originalVaccineName;
   final VaccineDoseInfo doseInfo;
   final bool isSuppressed;
+  final double? height;
+  final double? weight;
+  final String? muac;
+  final String? remarks;
+  final String? nextScheduleDate;
 
   ImmunizationItem({
     required this.id,
@@ -21,18 +27,36 @@ class ImmunizationItem {
     required this.vaccineName,
     required this.doseNumber,
     required this.scheduleDate,
+    this.batchScheduleDate,
     this.catchUpDate,
     this.dateGiven,
     required this.status,
     required this.originalVaccineName,
     required this.doseInfo,
     this.isSuppressed = false,
+    this.height,
+    this.weight,
+    this.muac,
+    this.remarks,
+    this.nextScheduleDate,
   });
 
   factory ImmunizationItem.fromJson(Map<String, dynamic> json) {
     final rawName = json['vaccine_name']?.toString() ?? '';
     final normalizedName = VaccineCatalog.normalizeIncomingName(rawName);
     final doseInfo = VaccineCatalog.describeDose(normalizedName ?? rawName);
+
+    // Parse numeric fields - handle both string and numeric types
+    double? parseDouble(dynamic value) {
+      if (value == null) return null;
+      if (value is double) return value;
+      if (value is int) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value);
+        return parsed;
+      }
+      return null;
+    }
 
     return ImmunizationItem(
       id: json['id'] ?? 0,
@@ -41,6 +65,7 @@ class ImmunizationItem {
       vaccineName: normalizedName ?? rawName,
       doseNumber: json['dose_number'] ?? 0,
       scheduleDate: json['schedule_date'] ?? '',
+      batchScheduleDate: json['batch_schedule_date']?.toString(),
       catchUpDate: json['catch_up_date'],
       dateGiven: json['date_given'],
       status: json['status'] ?? '',
@@ -49,6 +74,11 @@ class ImmunizationItem {
       isSuppressed:
           normalizedName == null &&
           VaccineCatalog.shouldIgnoreLegacyName(rawName),
+      height: parseDouble(json['height']),
+      weight: parseDouble(json['weight']),
+      muac: json['muac']?.toString(),
+      remarks: json['remarks']?.toString(),
+      nextScheduleDate: json['next_schedule_date']?.toString(),
     );
   }
 
@@ -60,10 +90,16 @@ class ImmunizationItem {
       'vaccine_name': vaccineName,
       'dose_number': doseNumber,
       'schedule_date': scheduleDate,
+      'batch_schedule_date': batchScheduleDate,
       'catch_up_date': catchUpDate,
       'date_given': dateGiven,
       'status': status,
       'original_vaccine_name': originalVaccineName,
+      'height': height,
+      'weight': weight,
+      'muac': muac,
+      'remarks': remarks,
+      'next_schedule_date': nextScheduleDate,
     };
   }
 

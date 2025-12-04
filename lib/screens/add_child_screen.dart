@@ -12,6 +12,7 @@ import '../utils/error_handler.dart';
 import '../utils/vaccine_catalog.dart';
 import '../mixins/animated_alert_mixin.dart';
 import '../widgets/app_bottom_navigation.dart';
+import '../widgets/app_drawer.dart';
 
 class AddChildScreen extends StatefulWidget {
   const AddChildScreen({super.key});
@@ -57,6 +58,7 @@ class _AddChildScreenState extends State<AddChildScreen>
   String _deliveryType = 'Normal';
   String _birthOrder = 'Single';
   String _birthAttendant = 'Doctor';
+  String? _bloodType;
   File? _babysCard;
   final Set<String> _vaccinesReceived = {};
 
@@ -109,6 +111,7 @@ class _AddChildScreenState extends State<AddChildScreen>
           backgroundColor: AppConstants.primaryGreen,
           foregroundColor: Colors.white,
         ),
+        drawer: const AppDrawer(),
         body: _buildBody(),
         bottomNavigationBar: const AppBottomNavigation(
           current: BottomNavDestination.addChild,
@@ -184,7 +187,7 @@ class _AddChildScreenState extends State<AddChildScreen>
             ),
             const SizedBox(height: 12),
             Text(
-              'Enter the code shared by your BHW/Midwife to link your child',
+              'Enter the code shared by your BHW/Midwife to add your child',
               style: AppConstants.bodyStyle.copyWith(
                 color: AppConstants.textSecondary,
               ),
@@ -229,7 +232,7 @@ class _AddChildScreenState extends State<AddChildScreen>
                         ),
                       )
                     : const Icon(Icons.link, size: 18),
-                label: Text(_isLinkingChild ? 'Linking...' : 'Link Child'),
+                  label: Text(_isLinkingChild ? 'Adding...' : 'Add Child'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppConstants.successGreen,
                   foregroundColor: Colors.white,
@@ -335,7 +338,10 @@ class _AddChildScreenState extends State<AddChildScreen>
               ),
               _buildTextFormField(
                 controller: _placeOfBirthController,
-                label: 'Place of Birth',
+                label: 'Place of Birth *',
+                validator: (value) => value?.trim().isEmpty == true
+                    ? 'Place of birth is required'
+                    : null,
               ),
               _buildTextFormField(
                 controller: _provinceController,
@@ -366,8 +372,8 @@ class _AddChildScreenState extends State<AddChildScreen>
               ),
               _buildTextFormField(
                 controller: _purokController,
-                label: 'Purok *',
-                hint: 'Enter purok',
+                label: 'Purok / Street / Block *',
+                hint: 'Enter purok, street, or block',
                 textCapitalization: TextCapitalization.words,
                 validator: (value) =>
                     value?.trim().isEmpty == true ? 'Purok is required' : null,
@@ -377,23 +383,45 @@ class _AddChildScreenState extends State<AddChildScreen>
                   Expanded(
                     child: _buildTextFormField(
                       controller: _birthWeightController,
-                      label: 'Birth Weight (kg)',
+                      label: 'Birth Weight (kg) *',
                       keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Birth weight is required';
+                        }
+                        final v = double.tryParse(value);
+                        if (v == null || v <= 0) {
+                          return 'Enter a valid weight';
+                        }
+                        return null;
+                      },
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: _buildTextFormField(
                       controller: _birthHeightController,
-                      label: 'Birth Height (cm)',
+                      label: 'Birth Height (cm) *',
                       keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Birth height is required';
+                        }
+                        final v = double.tryParse(value);
+                        if (v == null || v <= 0) {
+                          return 'Enter a valid height';
+                        }
+                          return null;
+                      },
                     ),
                   ),
                 ],
               ),
-              _buildTextFormField(
-                controller: _bloodTypeController,
+              _buildDropdownField(
                 label: 'Blood Type',
+                value: _bloodType,
+                items: const ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+                onChanged: (value) => setState(() => _bloodType = value),
               ),
               _buildTextFormField(
                 controller: _allergiesController,
@@ -448,6 +476,8 @@ class _AddChildScreenState extends State<AddChildScreen>
               _buildTextFormField(
                 controller: _fatherNameController,
                 label: _getParentLabel('father'),
+                validator: (value) =>
+                    value?.trim().isEmpty == true ? 'Father name is required' : null,
               ),
               _buildDateField(
                 label: 'LMP (Last Menstrual Period)',
@@ -629,7 +659,7 @@ class _AddChildScreenState extends State<AddChildScreen>
 
   Widget _buildDropdownField({
     required String label,
-    required String value,
+    String? value,
     required List<String> items,
     required void Function(String?) onChanged,
   }) {
@@ -921,7 +951,7 @@ class _AddChildScreenState extends State<AddChildScreen>
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Link Child?'),
+          title: const Text('Add Child?'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -936,7 +966,7 @@ class _AddChildScreenState extends State<AddChildScreen>
                 Text('Baby ID: ${previewResult.babyId}'),
               const SizedBox(height: 12),
               const Text(
-                'Please confirm you want to link this child to your account.',
+                'Please confirm you want to Add this child to your account.',
               ),
             ],
           ),
@@ -947,7 +977,7 @@ class _AddChildScreenState extends State<AddChildScreen>
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Link Child'),
+              child: const Text('Add Child'),
             ),
           ],
         );
@@ -967,7 +997,7 @@ class _AddChildScreenState extends State<AddChildScreen>
 
       if (result.isSuccess) {
         showSuccessAlert(
-          'Child "${result.childName ?? 'Child'}" linked successfully! Baby ID: ${result.babyId ?? 'N/A'}',
+          'Child "${result.childName ?? 'Child'}" added successfully! Baby ID: ${result.babyId ?? 'N/A'}',
           duration: const Duration(seconds: 3),
         );
         _familyCodeController.clear();
@@ -997,7 +1027,7 @@ class _AddChildScreenState extends State<AddChildScreen>
           ErrorHandler.handleError(context, e);
         }
       } else {
-        showErrorAlert('Failed to link child. Please try again.');
+        showErrorAlert('Failed to add child. Please try again.');
       }
     } finally {
       if (mounted) {
@@ -1054,9 +1084,7 @@ class _AddChildScreenState extends State<AddChildScreen>
             : null,
         deliveryType: _deliveryType,
         birthOrder: _birthOrder,
-        bloodType: _bloodTypeController.text.trim().isEmpty
-            ? null
-            : _bloodTypeController.text.trim(),
+        bloodType: _bloodType,
         allergies: _allergiesController.text.trim().isEmpty
             ? null
             : _allergiesController.text.trim(),
@@ -1317,6 +1345,7 @@ class _AddChildScreenState extends State<AddChildScreen>
       _birthWeightController.clear();
       _birthHeightController.clear();
       _bloodTypeController.clear();
+      _bloodType = null;
       _allergiesController.clear();
       _placeNewbornScreeningController.clear();
       // Keep pre-filled parent names from profile

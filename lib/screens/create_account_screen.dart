@@ -229,7 +229,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       return false;
     }
     if (_purokController.text.trim().isEmpty) {
-      showErrorAlert('Please enter your purok');
+      showErrorAlert('Please enter your purok / street / block');
       return false;
     }
     return true;
@@ -902,7 +902,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
           items: const [
             DropdownMenuItem(value: 'Male', child: Text('Male')),
             DropdownMenuItem(value: 'Female', child: Text('Female')),
-            DropdownMenuItem(value: 'Other', child: Text('Other')),
           ],
           onChanged: (value) {
             setState(() {
@@ -994,18 +993,18 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
         ),
         const SizedBox(height: 16),
 
-        // Purok
+        // Purok / Street / Block
         TextFormField(
           controller: _purokController,
           decoration: const InputDecoration(
-            labelText: 'Purok',
-            hintText: 'Enter purok',
+            labelText: 'Purok / Street / Block',
+            hintText: 'Enter purok, street, or block',
             prefixIcon: Icon(Icons.place),
           ),
           textCapitalization: TextCapitalization.words,
           validator: (value) {
             if (value == null || value.trim().isEmpty) {
-              return 'Please enter your purok';
+              return 'Please enter your purok / street / block';
             }
             return null;
           },

@@ -10,6 +10,7 @@ import '../services/api_client.dart';
 import '../models/chr_requests.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
+import '../widgets/app_drawer.dart';
 
 class ApprovedRequestsScreen extends StatefulWidget {
   const ApprovedRequestsScreen({super.key});
@@ -255,6 +256,7 @@ class _ApprovedRequestsScreenState extends State<ApprovedRequestsScreen> {
         backgroundColor: AppConstants.primaryGreen,
         foregroundColor: Colors.white,
       ),
+      drawer: const AppDrawer(),
       body: _buildBody(),
     );
   }

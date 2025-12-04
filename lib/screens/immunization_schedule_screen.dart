@@ -5,6 +5,7 @@ import '../services/api_client.dart';
 import '../models/immunization.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
+import '../widgets/app_drawer.dart';
 
 class ImmunizationScheduleScreen extends StatefulWidget {
   final String babyId;
@@ -146,6 +147,7 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
                 ],
               ),
       ),
+      drawer: const AppDrawer(),
       body: _buildBody(),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 import '../utils/constants.dart';
+import '../widgets/app_drawer.dart';
 
 class AppNotificationSettingsScreen extends StatefulWidget {
   const AppNotificationSettingsScreen({super.key});
@@ -42,6 +43,7 @@ class _AppNotificationSettingsScreenState extends State<AppNotificationSettingsS
         backgroundColor: AppConstants.primaryGreen,
         foregroundColor: Colors.white,
       ),
+      drawer: const AppDrawer(),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
