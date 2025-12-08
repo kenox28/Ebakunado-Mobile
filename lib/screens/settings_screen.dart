@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_client.dart';
@@ -12,6 +13,7 @@ import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../mixins/animated_alert_mixin.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/app_bottom_navigation.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -35,9 +37,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   UserProfile? _profile;
 
   // Notification status
-  TimeOfDay? _customNotificationTime;
   bool _notificationsEnabled = false;
   bool _batteryUnrestricted = false;
+  bool _storagePermissionGranted = false;
+  bool _manageStoragePermissionGranted = false;
 
   // Form controllers
   final _fnameController = TextEditingController();
@@ -69,16 +72,33 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _loadNotificationStatus() async {
     setState(() => _isLoadingNotificationStatus = true);
     try {
-      final customTime = await NotificationService.getCustomNotificationTime();
       final notifEnabled = await NotificationService.areNotificationsEnabled();
       final batteryOk =
           await NotificationService.isBatteryOptimizationDisabled();
 
+      // Check storage permissions
+      bool storageGranted = false;
+      bool manageStorageGranted = false;
+
+      if (Platform.isAndroid) {
+        final storageStatus = await Permission.storage.status;
+        storageGranted = storageStatus.isGranted;
+
+        final manageStorageStatus =
+            await Permission.manageExternalStorage.status;
+        manageStorageGranted = manageStorageStatus.isGranted;
+      } else {
+        // iOS doesn't need these permissions
+        storageGranted = true;
+        manageStorageGranted = true;
+      }
+
       if (mounted) {
         setState(() {
-          _customNotificationTime = customTime;
           _notificationsEnabled = notifEnabled;
           _batteryUnrestricted = batteryOk;
+          _storagePermissionGranted = storageGranted;
+          _manageStoragePermissionGranted = manageStorageGranted;
           _isLoadingNotificationStatus = false;
         });
       }
@@ -132,6 +152,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
         drawer: const AppDrawer(),
         body: _buildBody(),
+        bottomNavigationBar: const AppBottomNavigation(
+          current: BottomNavDestination.dashboard,
+        ),
       ),
     );
   }
@@ -636,26 +659,69 @@ class _SettingsScreenState extends State<SettingsScreen>
               else ...[
                 _buildNotificationStatusItem(
                   icon: Icons.access_time,
-                  label: 'Daily Check Time',
-                  value: _customNotificationTime != null
-                      ? _formatTime(_customNotificationTime!)
-                      : 'Not set',
-                  status: _customNotificationTime != null ? 'ok' : 'warning',
+                  label: 'Daily Check Times',
+                  value: '8:00 AM & 11:59 PM',
+                  status: 'ok',
                 ),
                 const Divider(height: 24),
-                _buildNotificationStatusItem(
+                _buildPermissionItem(
                   icon: Icons.notifications,
                   label: 'Notifications',
                   value: _notificationsEnabled ? 'Allowed' : 'Blocked',
                   status: _notificationsEnabled ? 'ok' : 'error',
+                  onTap: () async {
+                    await NotificationService.openSystemNotificationSettings();
+                    await _loadNotificationStatus();
+                  },
                 ),
                 const SizedBox(height: 8),
-                _buildNotificationStatusItem(
+                _buildPermissionItem(
                   icon: Icons.battery_saver,
                   label: 'Battery Optimization',
                   value: _batteryUnrestricted ? 'Unrestricted' : 'Restricted',
                   status: _batteryUnrestricted ? 'ok' : 'warning',
+                  onTap: () async {
+                    await NotificationService.openSystemBatterySettings();
+                    await _loadNotificationStatus();
+                  },
                 ),
+                const SizedBox(height: 8),
+                if (Platform.isAndroid) ...[
+                  _buildPermissionItem(
+                    icon: Icons.folder,
+                    label: 'Storage Access',
+                    value: _storagePermissionGranted ? 'Granted' : 'Denied',
+                    status: _storagePermissionGranted ? 'ok' : 'warning',
+                    onTap: () async {
+                      if (!_storagePermissionGranted) {
+                        final status = await Permission.storage.request();
+                        if (status.isPermanentlyDenied) {
+                          await openAppSettings();
+                        }
+                      }
+                      await _loadNotificationStatus();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPermissionItem(
+                    icon: Icons.storage,
+                    label: 'All Files Access',
+                    value: _manageStoragePermissionGranted
+                        ? 'Granted'
+                        : 'Denied',
+                    status: _manageStoragePermissionGranted ? 'ok' : 'warning',
+                    onTap: () async {
+                      if (!_manageStoragePermissionGranted) {
+                        final status = await Permission.manageExternalStorage
+                            .request();
+                        if (status.isPermanentlyDenied) {
+                          await openAppSettings();
+                        }
+                      }
+                      await _loadNotificationStatus();
+                    },
+                  ),
+                ],
               ],
             ],
           ),
@@ -720,37 +786,102 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildPermissionItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required String status,
+    required VoidCallback onTap,
+  }) {
+    Color statusColor;
+    IconData statusIcon;
+    if (status == 'ok') {
+      statusColor = AppConstants.successGreen;
+      statusIcon = Icons.check_circle;
+    } else if (status == 'warning') {
+      statusColor = Colors.orange;
+      statusIcon = Icons.warning;
+    } else {
+      statusColor = AppConstants.errorRed;
+      statusIcon = Icons.error;
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.grey[600]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(statusIcon, size: 16, color: statusColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        value,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 20, color: Colors.grey[400]),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAppSettingsSection() {
     return Card(
-            elevation: AppConstants.cardElevation,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-            ),
-          child: Padding(
-            padding: const EdgeInsets.all(AppConstants.defaultPadding),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      elevation: AppConstants.cardElevation,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.defaultPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: AppConstants.primaryGreen,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'App Information',
-                      style: AppConstants.subheadingStyle.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                const Icon(
+                  Icons.info_outline,
+                  color: AppConstants.primaryGreen,
                 ),
-                const SizedBox(height: 16),
-                _buildAppInfo(),
+                const SizedBox(width: 8),
+                Text(
+                  'App Information',
+                  style: AppConstants.subheadingStyle.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
-          ),
+            const SizedBox(height: 16),
+            _buildAppInfo(),
+          ],
+        ),
+      ),
     );
   }
 
@@ -777,12 +908,6 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ],
     );
-  }
-
-  String _formatTime(TimeOfDay time) {
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-    return TimeOfDay.fromDateTime(dt).format(context);
   }
 
   Widget _buildTextFormField({

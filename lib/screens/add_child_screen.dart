@@ -232,7 +232,7 @@ class _AddChildScreenState extends State<AddChildScreen>
                         ),
                       )
                     : const Icon(Icons.link, size: 18),
-                  label: Text(_isLinkingChild ? 'Adding...' : 'Add Child'),
+                label: Text(_isLinkingChild ? 'Adding...' : 'Add Child'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppConstants.successGreen,
                   foregroundColor: Colors.white,
@@ -393,6 +393,9 @@ class _AddChildScreenState extends State<AddChildScreen>
                         if (v == null || v <= 0) {
                           return 'Enter a valid weight';
                         }
+                        if (v < 0.5 || v > 10.0) {
+                          return 'Weight must be between 0.5 and 10.0 kg';
+                        }
                         return null;
                       },
                     ),
@@ -411,7 +414,10 @@ class _AddChildScreenState extends State<AddChildScreen>
                         if (v == null || v <= 0) {
                           return 'Enter a valid height';
                         }
-                          return null;
+                        if (v < 25 || v > 70) {
+                          return 'Height must be between 25 and 70 cm';
+                        }
+                        return null;
                       },
                     ),
                   ),
@@ -422,19 +428,23 @@ class _AddChildScreenState extends State<AddChildScreen>
                 value: _bloodType,
                 items: const ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
                 onChanged: (value) => setState(() => _bloodType = value),
+                hint: 'Select blood type (optional)',
               ),
               _buildTextFormField(
                 controller: _allergiesController,
                 label: 'Allergies',
+                hint: 'Enter allergies (optional)',
               ),
               _buildDateField(
                 label: 'Date of Newborn Screening',
                 value: _newbornScreeningDate,
                 onTap: _selectNewbornScreeningDate,
+                optionalHint: 'Select date (optional)',
               ),
               _buildTextFormField(
                 controller: _placeNewbornScreeningController,
                 label: 'Place of Newborn Screening',
+                hint: 'Enter place (optional)',
               ),
 
               const SizedBox(height: 24),
@@ -469,24 +479,27 @@ class _AddChildScreenState extends State<AddChildScreen>
               _buildSectionTitle('Parent Information'),
               _buildTextFormField(
                 controller: _motherNameController,
-                label: _getParentLabel('mother'),
+                label: '${_getParentLabel('mother')} *',
                 validator: (value) =>
                     value?.isEmpty == true ? 'Mother name is required' : null,
               ),
               _buildTextFormField(
                 controller: _fatherNameController,
-                label: _getParentLabel('father'),
-                validator: (value) =>
-                    value?.trim().isEmpty == true ? 'Father name is required' : null,
+                label: '${_getParentLabel('father')} *',
+                validator: (value) => value?.trim().isEmpty == true
+                    ? 'Father name is required'
+                    : null,
               ),
               _buildDateField(
                 label: 'LMP (Last Menstrual Period)',
                 value: _lmp,
                 onTap: _selectLMP,
+                optionalHint: 'Select date (optional)',
               ),
               _buildTextFormField(
                 controller: _familyPlanningController,
                 label: 'Family Planning',
+                hint: 'Enter family planning method (optional)',
               ),
 
               const SizedBox(height: 24),
@@ -494,27 +507,39 @@ class _AddChildScreenState extends State<AddChildScreen>
               // Birth Details
               _buildSectionTitle('Birth Details'),
               _buildDropdownField(
-                label: 'Type of Delivery',
+                label: 'Type of Delivery *',
                 value: _deliveryType,
                 items: const ['Normal', 'Caesarean Section'],
                 onChanged: (value) => setState(() => _deliveryType = value!),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Type of delivery is required'
+                    : null,
               ),
               _buildDropdownField(
-                label: 'Birth Order',
+                label: 'Birth Order *',
                 value: _birthOrder,
                 items: const ['Single', 'Twin'],
                 onChanged: (value) => setState(() => _birthOrder = value!),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Birth order is required'
+                    : null,
               ),
               _buildDropdownField(
-                label: 'Birth Attendant',
+                label: 'Birth Attendant *',
                 value: _birthAttendant,
                 items: const ['Doctor', 'Midwife', 'Nurse', 'Hilot', 'Other'],
                 onChanged: (value) => setState(() => _birthAttendant = value!),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Birth attendant is required'
+                    : null,
               ),
               if (_birthAttendant == 'Other')
                 _buildTextFormField(
                   controller: _birthAttendantOthersController,
-                  label: 'Specify Birth Attendant',
+                  label: 'Specify Birth Attendant *',
+                  validator: (value) => value?.trim().isEmpty == true
+                      ? 'Please specify birth attendant'
+                      : null,
                 ),
 
               const SizedBox(height: 24),
@@ -629,6 +654,7 @@ class _AddChildScreenState extends State<AddChildScreen>
     required DateTime? value,
     required VoidCallback onTap,
     String? Function(String?)? validator,
+    String? optionalHint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -639,7 +665,7 @@ class _AddChildScreenState extends State<AddChildScreen>
         decoration: InputDecoration(
           labelText: label,
           hintText: value == null
-              ? 'Select date'
+              ? (optionalHint ?? 'Select date')
               : '${value.day}/${value.month}/${value.year}',
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppConstants.borderRadius),
@@ -662,13 +688,17 @@ class _AddChildScreenState extends State<AddChildScreen>
     String? value,
     required List<String> items,
     required void Function(String?) onChanged,
+    String? Function(String?)? validator,
+    String? hint,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: DropdownButtonFormField<String>(
         value: value,
+        validator: validator,
         decoration: InputDecoration(
           labelText: label,
+          hintText: hint,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppConstants.borderRadius),
           ),
@@ -801,11 +831,12 @@ class _AddChildScreenState extends State<AddChildScreen>
   }
 
   Future<void> _selectBirthDate() async {
+    final now = DateTime.now();
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now().subtract(const Duration(days: 365)),
+      initialDate: now.subtract(const Duration(days: 365)),
       firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
+      lastDate: DateTime(now.year + 1, 12, 31), // Allow up to end of next year
     );
     if (picked != null && picked != _birthDate) {
       setState(() => _birthDate = picked);
@@ -813,11 +844,12 @@ class _AddChildScreenState extends State<AddChildScreen>
   }
 
   Future<void> _selectLMP() async {
+    final now = DateTime.now();
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now().subtract(const Duration(days: 280)),
+      initialDate: now.subtract(const Duration(days: 280)),
       firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
+      lastDate: DateTime(now.year + 1, 12, 31), // Allow up to end of next year
     );
     if (picked != null && picked != _lmp) {
       setState(() => _lmp = picked);
@@ -825,11 +857,12 @@ class _AddChildScreenState extends State<AddChildScreen>
   }
 
   Future<void> _selectNewbornScreeningDate() async {
+    final now = DateTime.now();
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: now,
       firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
+      lastDate: DateTime(now.year + 1, 12, 31), // Allow up to end of next year
     );
     if (picked != null && picked != _newbornScreeningDate) {
       setState(() => _newbornScreeningDate = picked);
@@ -1251,18 +1284,11 @@ class _AddChildScreenState extends State<AddChildScreen>
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context, true); // Go back with refresh flag
-            },
-            child: const Text('Go to Children List'),
-          ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
             },
-            child: const Text('Add Another Child'),
+            child: const Text('OK'),
           ),
         ],
       ),

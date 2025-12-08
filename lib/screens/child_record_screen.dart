@@ -8,6 +8,7 @@ import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../mixins/animated_alert_mixin.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/app_bottom_navigation.dart';
 
 class ChildRecordScreen extends StatefulWidget {
   final String babyId;
@@ -96,7 +97,10 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
     setState(() => _isLoadingVaccinations = true);
 
     try {
-      final response = await ApiClient.instance.getImmunizationSchedule();
+      // Pass babyId to ensure transferred children's vaccination records are included
+      final response = await ApiClient.instance.getImmunizationSchedule(
+        babyId: widget.babyId,
+      );
       if (response.data['status'] == 'success') {
         final scheduleResponse = ImmunizationScheduleResponse.fromJson(
           response.data,
@@ -106,18 +110,16 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
         final childVaccinations = allVaccinations
             .where((v) => v.babyId == widget.babyId)
             .toList();
-        
+
         // Calculate next_schedule_date for each vaccination
         final vaccinationsWithNextSchedule = _calculateNextScheduleDates(
           childVaccinations,
         );
-        
+
         // Filter to get only TAKEN ones
         setState(() {
           _vaccinations = vaccinationsWithNextSchedule
-              .where(
-                (v) => v.isTaken || v.status == 'taken',
-              )
+              .where((v) => v.isTaken || v.status == 'taken')
               .toList();
           _isLoadingVaccinations = false;
         });
@@ -155,9 +157,10 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
     String? getCanonicalKey(String vaccineName) {
       final name = vaccineName.toLowerCase().trim();
       if (name.contains('bcg')) return 'bcg';
-      if (name.contains('hepb') || 
-          name.contains('hepatitis b') || 
-          name.contains('hepab1')) return 'hepb_birth';
+      if (name.contains('hepb') ||
+          name.contains('hepatitis b') ||
+          name.contains('hepab1'))
+        return 'hepb_birth';
       if (name.contains('penta') && name.contains('1st')) return 'penta1';
       if (name.contains('penta') && name.contains('2nd')) return 'penta2';
       if (name.contains('penta') && name.contains('3rd')) return 'penta3';
@@ -176,7 +179,8 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
 
     // Get due date with priority: batch_schedule_date > catch_up_date > schedule_date
     String? getDueDate(ImmunizationItem item) {
-      if (item.batchScheduleDate != null && item.batchScheduleDate!.isNotEmpty) {
+      if (item.batchScheduleDate != null &&
+          item.batchScheduleDate!.isNotEmpty) {
         return item.batchScheduleDate;
       }
       if (item.catchUpDate != null && item.catchUpDate!.isNotEmpty) {
@@ -266,6 +270,9 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
         ),
         drawer: const AppDrawer(),
         body: _buildBody(),
+        bottomNavigationBar: const AppBottomNavigation(
+          current: BottomNavDestination.myChildren,
+        ),
       ),
     );
   }
@@ -623,7 +630,10 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Request Baby Card & Transfer', style: AppConstants.subheadingStyle),
+            Text(
+              'Request Baby Card & Transfer',
+              style: AppConstants.subheadingStyle,
+            ),
             const SizedBox(height: 12),
             Text(
               'Request official documents for ${_childDetail!.name}',
@@ -664,9 +674,7 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppConstants.primaryGreen,
-                      side: const BorderSide(
-                        color: AppConstants.primaryGreen,
-                      ),
+                      side: const BorderSide(color: AppConstants.primaryGreen),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
@@ -908,7 +916,8 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                   : '';
               final vaccineName = vaccination.vaccineWithDose;
               final status = vaccination.status.toUpperCase();
-              final nextScheduleFormatted = vaccination.nextScheduleDate != null &&
+              final nextScheduleFormatted =
+                  vaccination.nextScheduleDate != null &&
                       vaccination.nextScheduleDate!.isNotEmpty
                   ? _formatDateForTable(vaccination.nextScheduleDate!)
                   : '-';

@@ -132,223 +132,263 @@ class _ForgotPasswordVerifyScreenState extends State<ForgotPasswordVerifyScreen>
     }
   }
 
+  Future<bool> _onWillPop() async {
+    // Show confirmation dialog when user tries to go back
+    final shouldPop = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel OTP Verification?'),
+        content: const Text(
+          'If you go back, you will need to request a new OTP code.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No, Continue'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Yes, Go Back',
+              style: TextStyle(color: AppConstants.errorRed),
+            ),
+          ),
+        ],
+      ),
+    );
+    return shouldPop ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return buildWithAlerts(
-      Scaffold(
-        backgroundColor: AppConstants.backgroundWhite,
-        appBar: AppBar(
-          title: const Text('Verify OTP'),
-          backgroundColor: AppConstants.primaryGreen,
-          foregroundColor: Colors.white,
-        ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 24),
+      PopScope(
+        canPop: false,
+        onPopInvoked: (didPop) async {
+          if (!didPop) {
+            final shouldPop = await _onWillPop();
+            if (shouldPop && context.mounted) {
+              Navigator.of(context).pop();
+            }
+          }
+        },
+        child: Scaffold(
+          backgroundColor: AppConstants.backgroundWhite,
+          appBar: AppBar(
+            title: const Text('Verify OTP'),
+            backgroundColor: AppConstants.primaryGreen,
+            foregroundColor: Colors.white,
+          ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 24),
 
-                // Key Icon
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppConstants.primaryGreen.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.vpn_key_rounded,
-                    size: 40,
-                    color: AppConstants.primaryGreen,
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // Title
-                Text(
-                  'Enter Verification Code',
-                  style: AppConstants.headingStyle.copyWith(
-                    color: AppConstants.primaryGreen,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-
-                const SizedBox(height: 16),
-
-                // Instructions
-                if (_contactType != null)
-                  Text(
-                    _contactType == 'email'
-                        ? 'We sent a 6-digit code to your email'
-                        : 'We sent a 6-digit code to your phone',
-                    style: AppConstants.bodyStyle.copyWith(
-                      color: AppConstants.textSecondary,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                if (_emailPhone != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _emailPhone!,
-                    style: AppConstants.bodyStyle.copyWith(
-                      color: AppConstants.primaryGreen,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-
-                const SizedBox(height: 40),
-
-                // OTP Input Field (single field)
-                TextFormField(
-                  controller: _otpController,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(6),
-                  ],
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 12,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '••••••',
-                    hintStyle: TextStyle(
-                      color: Colors.grey.shade400,
-                      letterSpacing: 12,
-                    ),
-                    counterText: '',
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppConstants.primaryGreen,
-                        width: 2,
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 2,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppConstants.primaryGreen,
-                        width: 2.5,
-                      ),
-                    ),
-                  ),
-                  onChanged: (value) {
-                    setState(() => _otp = value);
-                  },
-                  onFieldSubmitted: (_) {
-                    if (_otp.length == 6) _verifyOtp();
-                  },
-                ),
-
-                const SizedBox(height: 32),
-
-                // Timer Display
-                if (_otpCountdown > 0)
+                  // Key Icon
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    width: 80,
+                    height: 80,
                     decoration: BoxDecoration(
                       color: AppConstants.primaryGreen.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      shape: BoxShape.circle,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.timer_outlined,
+                    child: const Icon(
+                      Icons.vpn_key_rounded,
+                      size: 40,
+                      color: AppConstants.primaryGreen,
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Title
+                  Text(
+                    'Enter Verification Code',
+                    style: AppConstants.headingStyle.copyWith(
+                      color: AppConstants.primaryGreen,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Instructions
+                  if (_contactType != null)
+                    Text(
+                      _contactType == 'email'
+                          ? 'We sent a 6-digit code to your email'
+                          : 'We sent a 6-digit code to your phone',
+                      style: AppConstants.bodyStyle.copyWith(
+                        color: AppConstants.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+
+                  if (_emailPhone != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _emailPhone!,
+                      style: AppConstants.bodyStyle.copyWith(
+                        color: AppConstants.primaryGreen,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+
+                  const SizedBox(height: 40),
+
+                  // OTP Input Field (single field)
+                  TextFormField(
+                    controller: _otpController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(6),
+                    ],
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 12,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '••••••',
+                      hintStyle: TextStyle(
+                        color: Colors.grey.shade400,
+                        letterSpacing: 12,
+                      ),
+                      counterText: '',
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
                           color: AppConstants.primaryGreen,
-                          size: 20,
+                          width: 2,
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Code expires in ${_formatCountdown()}',
-                          style: AppConstants.bodyStyle.copyWith(
-                            color: AppConstants.primaryGreen,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.grey.shade300,
+                          width: 2,
                         ),
-                      ],
-                    ),
-                  ),
-
-                const SizedBox(height: 24),
-
-                // Verify Button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyOtp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppConstants.primaryGreen,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : const Text(
-                          'Verify Code',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Resend OTP
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'Didn\'t receive the code?',
-                      style: AppConstants.bodyStyle,
-                    ),
-                    TextButton(
-                      onPressed: _canResend && !_isLoading ? _resendOtp : null,
-                      child: Text(
-                        _canResend ? 'Resend' : 'Wait...',
-                        style: TextStyle(
-                          color: _canResend
-                              ? AppConstants.primaryGreen
-                              : AppConstants.textSecondary,
-                          fontWeight: FontWeight.bold,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: AppConstants.primaryGreen,
+                          width: 2.5,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ],
+                    onChanged: (value) {
+                      setState(() => _otp = value);
+                    },
+                    onFieldSubmitted: (_) {
+                      if (_otp.length == 6) _verifyOtp();
+                    },
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Timer Display
+                  if (_otpCountdown > 0)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppConstants.primaryGreen.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.timer_outlined,
+                            color: AppConstants.primaryGreen,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Code expires in ${_formatCountdown()}',
+                            style: AppConstants.bodyStyle.copyWith(
+                              color: AppConstants.primaryGreen,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 24),
+
+                  // Verify Button
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _verifyOtp,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppConstants.primaryGreen,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Text(
+                            'Verify Code',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Resend OTP
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Didn\'t receive the code?',
+                        style: AppConstants.bodyStyle,
+                      ),
+                      TextButton(
+                        onPressed: _canResend && !_isLoading
+                            ? _resendOtp
+                            : null,
+                        child: Text(
+                          _canResend ? 'Resend' : 'Wait...',
+                          style: TextStyle(
+                            color: _canResend
+                                ? AppConstants.primaryGreen
+                                : AppConstants.textSecondary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -356,4 +396,3 @@ class _ForgotPasswordVerifyScreenState extends State<ForgotPasswordVerifyScreen>
     );
   }
 }
-

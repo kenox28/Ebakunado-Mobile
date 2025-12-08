@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  static const String baseUrl = 'http://192.168.43.73/ebakunado/';
+  static const String baseUrl = 'https://ebakunado.com/';
   // https://ebakunado.com/
   // http://192.168.43.73/ebakunado/
+  // http://192.168.254.103/ebakunado/
   static const String apiKey = 'MY_SECRET_KEY';
   static const int requestTimeout = 30; // seconds
 

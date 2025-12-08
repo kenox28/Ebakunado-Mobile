@@ -79,7 +79,10 @@ class ChildListItem {
   // Helper method to check if child is pending
   bool get isPending => status == 'pending';
 
-  // Helper method to check if child is accepted
+  // Helper method to check if child is transferred
+  bool get isTransfer => status == 'transfer';
+
+  // Helper method to check if child is accepted (excludes transfer status)
   bool get isAccepted => status == 'accepted';
 }
 
@@ -92,7 +95,8 @@ class AcceptedChildResponse {
   factory AcceptedChildResponse.fromJson(Map<String, dynamic> json) {
     return AcceptedChildResponse(
       status: json['status'] ?? '',
-      data: (json['data'] as List<dynamic>?)
+      data:
+          (json['data'] as List<dynamic>?)
               ?.map((item) => ChildListItem.fromJson(item))
               .toList() ??
           [],

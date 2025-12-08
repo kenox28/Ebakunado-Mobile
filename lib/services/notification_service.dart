@@ -149,11 +149,10 @@ class NotificationService {
 
   static const int _dailyCheckMorningId = 999990;
   static const int _dailyCheckEveningId = 999991;
-  static const int _dailyCheckCustomId = 999999;
+  // Custom time option removed - only using default times (8:00 AM and 11:59 PM)
 
   static const int _dailyCheckMorningRequestCode = 910990;
   static const int _dailyCheckEveningRequestCode = 910991;
-  static const int _dailyCheckCustomRequestCode = 910999;
 
   static const List<_DailyCheckSlot> _defaultDailyCheckSlots = [
     _DailyCheckSlot(
@@ -856,10 +855,7 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         // Avoid fullscreen popups that can interfere with foreground app state
-        styleInformation: BigTextStyleInformation(
-          message,
-          contentTitle: title,
-        ),
+        styleInformation: BigTextStyleInformation(message, contentTitle: title),
         enableVibration: true,
         playSound: true,
       );
@@ -1395,23 +1391,39 @@ class NotificationService {
         batchDate != null &&
         batchDate.isNotEmpty;
 
+    // Log available dates for debugging
+    debugPrint('📅 Date Selection for ${item.name} (${item.babyId}):');
+    debugPrint(
+      '   - Guideline Date (schedule_date): ${guidelineDate ?? "null"}',
+    );
+    debugPrint('   - Batch Date (batch_schedule_date): ${batchDate ?? "null"}');
+    debugPrint('   - Schedule Source: ${item.scheduleSource ?? "null"}');
+    debugPrint('   - Uses Batch: $currentVaccineUsesBatch');
+
     // Use batch date only if this specific vaccine uses batch schedule
     String? dateIso = currentVaccineUsesBatch ? batchDate : guidelineDate;
+    String? selectedDateType = currentVaccineUsesBatch ? 'BATCH' : 'GUIDELINE';
     bool isCatchUp = item.nextIsCatchUp;
     String? vaccine = item.upcomingVaccine;
 
     if ((dateIso == null || dateIso.isEmpty) && item.closestMissed != null) {
       final fallbackDate = item.closestMissed?.catchUpDate;
       if (fallbackDate != null && fallbackDate.isNotEmpty) {
+        debugPrint('   - Catch-up Date (catch_up_date): $fallbackDate');
         dateIso = fallbackDate;
+        selectedDateType = 'CATCH_UP';
         isCatchUp = true;
         if (vaccine == null || vaccine.isEmpty) {
           vaccine = item.closestMissed?.vaccineName ?? '';
         }
+        debugPrint('   ✅ Using CATCH_UP date (fallback): $fallbackDate');
       }
+    } else if (dateIso != null && dateIso.isNotEmpty) {
+      debugPrint('   ✅ Using $selectedDateType date: $dateIso');
     }
 
     if (dateIso == null || dateIso.isEmpty) {
+      debugPrint('   ❌ No valid date found - skipping notification');
       return null;
     }
 
@@ -1420,6 +1432,10 @@ class NotificationService {
         : currentVaccineUsesBatch
         ? 'batch'
         : 'guideline';
+
+    debugPrint(
+      '   📌 Final selection: $dateIso (source: $source, catchUp: $isCatchUp)',
+    );
 
     return {
       'date': dateIso,
@@ -1493,26 +1509,16 @@ class NotificationService {
   static Future<void> scheduleDailyNotificationCheck() async {
     try {
       await _ensureNotificationsInitialized(background: false);
-      for (final id in [
-        _dailyCheckMorningId,
-        _dailyCheckEveningId,
-        _dailyCheckCustomId,
-      ]) {
+      for (final id in [_dailyCheckMorningId, _dailyCheckEveningId]) {
         await cancelNotification(id);
         await _cancelNativeNotification(id);
       }
 
       await _cancelNativeDailyCheckAlarms();
 
-      final customTime = await getCustomNotificationTime();
-      final customSlot = _DailyCheckSlot(
-        notificationId: _dailyCheckCustomId,
-        nativeRequestCode: _dailyCheckCustomRequestCode,
-        time: customTime,
-        isDefault: false,
-      );
-
-      final slots = [..._defaultDailyCheckSlots, customSlot];
+      // Only use default slots (8:00 AM and 11:59 PM)
+      // Custom time option has been removed
+      final slots = _defaultDailyCheckSlots;
 
       final displayTimes = slots
           .map((slot) => _formatTimeOfDay(slot.time))
@@ -1864,17 +1870,23 @@ class NotificationService {
         final String? batchDate = info['batchDate'] as String?;
         final String? guidelineDate = info['guidelineDate'] as String?;
 
-        debugPrint(
-          'Processing ${item.name}: date=$dateIso catchUp=$isCatchUp vaccine=$vaccine source=$source',
-        );
+        debugPrint('🔔 Scheduling notification for ${item.name}:');
+        debugPrint('   - Selected Date: $dateIso');
+        debugPrint('   - Date Source: $source');
+        debugPrint('   - Is Catch-up: $isCatchUp');
+        debugPrint('   - Vaccine: $vaccine');
+        if (batchDate != null) {
+          debugPrint('   - Batch Date Available: $batchDate');
+        }
+        if (guidelineDate != null) {
+          debugPrint('   - Guideline Date Available: $guidelineDate');
+        }
 
         try {
           final upcomingDate = DateTime.parse(dateIso);
           final daysUntil = upcomingDate.difference(today).inDays;
 
-          debugPrint(
-            'Processing ${item.name}: date=$dateIso catchUp=$isCatchUp daysUntil=$daysUntil',
-          );
+          debugPrint('   - Days Until: $daysUntil');
 
           if (daysUntil >= 0 && daysUntil <= 7) {
             final notificationDate = tz.TZDateTime(

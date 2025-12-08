@@ -5,6 +5,7 @@ import '../providers/user_profile_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../providers/notification_provider.dart';
 import '../utils/constants.dart';
+import '../main.dart'; // Import to access navigatorKey
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -92,7 +93,10 @@ class AppDrawer extends StatelessWidget {
                   title: const Text('My Children'),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, AppConstants.myChildrenRoute);
+                    Navigator.pushReplacementNamed(
+                      context,
+                      AppConstants.myChildrenRoute,
+                    );
                   },
                 ),
                 ListTile(
@@ -100,7 +104,7 @@ class AppDrawer extends StatelessWidget {
                   title: const Text('Add Child'),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(
+                    Navigator.pushReplacementNamed(
                       context,
                       AppConstants.requestChildRoute,
                     );
@@ -176,18 +180,43 @@ class AppDrawer extends StatelessWidget {
                   );
 
                   if (shouldLogout == true) {
+                    // Close dialog first
+                    if (navigatorContext.mounted) {
+                      Navigator.of(navigatorContext, rootNavigator: true).pop();
+                    }
+
                     // Clear all cached data
                     await authProvider.logout();
                     await profileProvider.clearProfile();
                     dashboardProvider.clear();
                     notificationProvider.clear();
 
-                    if (navigatorContext.mounted) {
-                      Navigator.pushNamedAndRemoveUntil(
-                        navigatorContext,
+                    // Wait for state to propagate
+                    await Future.delayed(const Duration(milliseconds: 100));
+
+                    // Use global navigator key to ensure we're using the root navigator
+                    // This works from ANY screen (Settings, Dashboard, etc.)
+                    final rootNav = navigatorKey.currentState;
+                    if (rootNav != null) {
+                      try {
+                        // Remove ALL routes and navigate to login
+                        // This clears the entire navigation stack
+                        rootNav.pushNamedAndRemoveUntil(
                         AppConstants.loginRoute,
-                        (route) => false,
+                          (route) => false, // Remove all routes
                       );
+                      } catch (e) {
+                        debugPrint('Logout navigation error: $e');
+                        // Fallback: pop all routes to root
+                        // AuthWrapper will rebuild and show LoginScreen
+                        try {
+                          rootNav.popUntil((route) => route.isFirst);
+                        } catch (e2) {
+                          debugPrint('Fallback navigation also failed: $e2');
+                        }
+                      }
+                    } else {
+                      debugPrint('Navigator key is null - cannot navigate');
                     }
                   }
                 },

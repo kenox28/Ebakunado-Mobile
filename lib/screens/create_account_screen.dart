@@ -41,6 +41,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
+  CreateAccountRequest? _pendingRequest;
+  String _otpSendPhone = '';
 
   // OTP state
   String _otp = '';
@@ -89,21 +91,23 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _sendOtp() async {
-    final phoneNumber = _formatPhoneNumber(_phoneController.text.trim());
+  Future<void> _sendOtp({String? phoneNumber}) async {
+    final targetPhone =
+        phoneNumber ?? _formatPhoneNumber(_phoneController.text.trim());
 
-    if (phoneNumber.isEmpty) {
+    if (targetPhone.isEmpty) {
       showErrorAlert('Please enter a valid phone number');
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      final response = await ApiClient.instance.sendOtp(phoneNumber);
+      final response = await ApiClient.instance.sendOtp(targetPhone);
       if (response.success) {
+        _otpSendPhone = targetPhone;
         _verifiedPhone = response.message.contains('+')
             ? response.message.split('to ')[1]
-            : phoneNumber;
+            : targetPhone;
         _startOtpTimer();
         setState(() {
           _otp = '';
@@ -116,7 +120,13 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       }
     } catch (e) {
       print('OTP Error Details: $e');
-      showErrorAlert('Failed to send OTP: ${e.toString()}');
+      // Show user-friendly error message
+      final errorMessage = e.toString().replaceAll('Exception: ', '');
+      showErrorAlert(
+        errorMessage.isNotEmpty
+            ? errorMessage
+            : 'Failed to send OTP. Please check your internet connection and try again.',
+      );
     } finally {
       setState(() => _isLoading = false);
     }
@@ -134,8 +144,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       if (response.success) {
         _closeOtpModal();
         showSuccessAlert('Phone number verified successfully!');
-        // Move to next step
-        _nextStep();
+        // Proceed to account creation with cached payload
+        await _submitPendingAccount();
       } else {
         showErrorAlert(response.message);
       }
@@ -198,9 +208,31 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       showErrorAlert('Please enter your last name');
       return false;
     }
-    if (_emailController.text.trim().isEmpty ||
-        !_isValidEmail(_emailController.text.trim())) {
-      showErrorAlert('Please enter a valid email address');
+    // Enhanced email validation with specific error messages
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      showErrorAlert('Please enter your email address');
+      return false;
+    }
+
+    if (!_isValidEmail(email)) {
+      // Provide specific error message based on validation failure
+      if (!email.contains('@')) {
+        showErrorAlert('Email must contain @ symbol');
+      } else if (email.split('@').length != 2) {
+        showErrorAlert('Invalid email format. Please check your email address');
+      } else {
+        final domain = email.split('@')[1];
+        if (domain.isEmpty || !domain.contains('.')) {
+          showErrorAlert(
+            'Email domain is invalid. Please enter a valid email address',
+          );
+        } else {
+          showErrorAlert(
+            'Please enter a valid email address (e.g., name@example.com)',
+          );
+        }
+      }
       return false;
     }
     if (_phoneController.text.trim().isEmpty ||
@@ -258,8 +290,79 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
   }
 
   bool _isValidEmail(String email) {
+    // Basic format check
     final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-    return emailRegex.hasMatch(email);
+    if (!emailRegex.hasMatch(email)) {
+      return false;
+    }
+
+    // Split email into local and domain parts
+    final parts = email.split('@');
+    if (parts.length != 2) {
+      return false;
+    }
+
+    final localPart = parts[0];
+    final domain = parts[1];
+
+    // Validate local part (before @)
+    if (localPart.isEmpty || localPart.length > 64) {
+      return false;
+    }
+    if (localPart.startsWith('.') || localPart.endsWith('.')) {
+      return false;
+    }
+    if (localPart.contains('..')) {
+      return false;
+    }
+
+    // Validate domain part (after @)
+    if (domain.isEmpty || domain.length > 255) {
+      return false;
+    }
+
+    // Check for valid TLD (Top Level Domain)
+    final tldRegex = RegExp(r'\.[a-zA-Z]{2,}$');
+    if (!tldRegex.hasMatch(domain)) {
+      return false;
+    }
+
+    // Check for common invalid patterns
+    final invalidPatterns = ['..', '@.', '.@', '@@', ' '];
+    for (final pattern in invalidPatterns) {
+      if (email.contains(pattern)) {
+        return false;
+      }
+    }
+
+    // Check for valid domain structure
+    final domainParts = domain.split('.');
+    if (domainParts.length < 2) {
+      return false;
+    }
+
+    // Each domain part should not be empty
+    for (final part in domainParts) {
+      if (part.isEmpty) {
+        return false;
+      }
+      // Domain parts should only contain letters, numbers, and hyphens
+      if (!RegExp(r'^[a-zA-Z0-9-]+$').hasMatch(part)) {
+        return false;
+      }
+      // Cannot start or end with hyphen
+      if (part.startsWith('-') || part.endsWith('-')) {
+        return false;
+      }
+    }
+
+    // TLD should be at least 2 characters and only letters
+    final tld = domainParts.last;
+    if (tld.length < 2 || !RegExp(r'^[a-zA-Z]+$').hasMatch(tld)) {
+      return false;
+    }
+
+    return true;
   }
 
   bool _isValidPhoneNumber(String phoneNumber) {
@@ -292,49 +395,21 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
         isNotWeak;
   }
 
-  Future<void> _createAccount() async {
-    if (!_validateStep3()) return;
+  Future<void> _submitPendingAccount() async {
+    if (_pendingRequest == null) {
+      showErrorAlert('Something went wrong. Please try again.');
+      return;
+    }
 
     setState(() => _isLoading = true);
     try {
-      // Format phone number for PHP: send as 09XXXXXXXXX format
-      final formattedPhone = _formatPhoneNumber(_phoneController.text.trim());
-      // Convert +639460017277 to 09460017277 for PHP compatibility
-      String phoneForApi = formattedPhone;
-      if (phoneForApi.startsWith('+63')) {
-        phoneForApi =
-            '0' + phoneForApi.substring(3); // +639460017277 -> 09460017277
-      } else if (phoneForApi.startsWith('63')) {
-        phoneForApi =
-            '0' + phoneForApi.substring(2); // 639460017277 -> 09460017277
-      }
-
-      final request = CreateAccountRequest(
-        fname: _fnameController.text.trim(),
-        lname: _lnameController.text.trim(),
-        email: _emailController.text.trim(),
-        number: phoneForApi, // Send without '+' sign
-        gender: _gender,
-        province: _provinceController.text.trim(),
-        cityMunicipality: _cityController.text.trim(),
-        barangay: _barangayController.text.trim(),
-        purok: _purokController.text.trim(),
-        password: _passwordController.text,
-        confirmPassword: _confirmPasswordController.text,
-        csrfToken: '', // Will be set by API client with mobile app token
-        mobileAppRequest: true,
-        skipOtp: false,
-        agreedToTerms: _agreedToTerms,
-      );
-
-      print('Creating account for: ${_emailController.text.trim()}');
-      print('Phone number sent: $phoneForApi');
-      final response = await ApiClient.instance.createAccount(request);
+      final response = await ApiClient.instance.createAccount(_pendingRequest!);
 
       if (response.success) {
         showSuccessAlert('Account created successfully! Please log in.');
         // Navigate to login screen
         Navigator.pushReplacementNamed(context, AppConstants.loginRoute);
+        _pendingRequest = null;
       } else {
         showErrorAlert(response.message);
       }
@@ -343,6 +418,43 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  bool _validateAllSteps() {
+    return _validateStep1() && _validateStep2() && _validateStep3();
+  }
+
+  Future<void> _startOtpAndCacheRequest() async {
+    if (!_validateAllSteps()) return;
+
+    // Format phone number for PHP: send as 09XXXXXXXXX format for create_account
+    final formattedPhone = _formatPhoneNumber(_phoneController.text.trim());
+    String phoneForApi = formattedPhone;
+    if (phoneForApi.startsWith('+63')) {
+      phoneForApi = '0' + phoneForApi.substring(3);
+    } else if (phoneForApi.startsWith('63')) {
+      phoneForApi = '0' + phoneForApi.substring(2);
+    }
+
+    _pendingRequest = CreateAccountRequest(
+      fname: _fnameController.text.trim(),
+      lname: _lnameController.text.trim(),
+      email: _emailController.text.trim(),
+      number: phoneForApi,
+      gender: _gender,
+      province: _provinceController.text.trim(),
+      cityMunicipality: _cityController.text.trim(),
+      barangay: _barangayController.text.trim(),
+      purok: _purokController.text.trim(),
+      password: _passwordController.text,
+      confirmPassword: _confirmPasswordController.text,
+      csrfToken: '',
+      mobileAppRequest: true,
+      skipOtp: false,
+      agreedToTerms: _agreedToTerms,
+    );
+
+    await _sendOtp(phoneNumber: formattedPhone);
   }
 
   @override
@@ -420,9 +532,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                 Expanded(
                                   child: ElevatedButton(
                                     onPressed: _currentStep == 0
-                                        ? () async {
+                                        ? () {
                                             if (_validateStep1()) {
-                                              await _sendOtp();
+                                              _nextStep();
                                             }
                                           }
                                         : _currentStep == 1
@@ -431,10 +543,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                               _nextStep();
                                             }
                                           }
-                                        : () {
-                                            if (_validateStep3()) {
-                                              _createAccount();
-                                            }
+                                        : () async {
+                                            await _startOtpAndCacheRequest();
                                           },
                                     child: _isLoading
                                         ? const SizedBox(
@@ -448,12 +558,20 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                                   ),
                                             ),
                                           )
-                                        : Text(
-                                            _currentStep == 0
-                                                ? 'Send OTP'
-                                                : _currentStep == 1
-                                                ? 'Next'
-                                                : 'Create Account',
+                                        : FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              _currentStep == 0
+                                                  ? 'Next'
+                                                  : _currentStep == 1
+                                                  ? 'Next'
+                                                  : 'Create Account',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
                                   ),
                                 ),
@@ -472,260 +590,378 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
           // OTP Modal
           if (_isOtpModalVisible)
             GestureDetector(
-              onTap: _closeOtpModal,
+              // Prevent closing on outside tap - only allow Cancel button
+              onTap: () {
+                // Do nothing - prevent accidental dismissal
+              },
               child: Container(
                 width: double.infinity,
                 height: double.infinity,
                 color: Colors.black.withOpacity(0.5),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final mediaQuery = MediaQuery.of(context);
-                    final double viewInsets = mediaQuery.viewInsets.bottom;
-                    final double modalWidth = (mediaQuery.size.width * 0.9)
-                        .clamp(280.0, 460.0)
-                        .toDouble();
+                child: Center(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final mediaQuery = MediaQuery.of(context);
+                      final double viewInsets = mediaQuery.viewInsets.bottom;
+                      final double modalWidth = (mediaQuery.size.width * 0.9)
+                          .clamp(280.0, 460.0)
+                          .toDouble();
 
-                    return SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(24, 32, 24, 32 + viewInsets),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: 460,
-                            minWidth: modalWidth,
-                          ),
-                          child: Material(
-                            borderRadius: BorderRadius.circular(18),
-                            color: Colors.white,
-                            elevation: 8,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 28,
-                              ),
-                              child: LayoutBuilder(
-                                builder: (context, modalConstraints) {
-                                  final bool isNarrow =
-                                      modalConstraints.maxWidth < 360;
-                                  return Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.sms,
-                                        size: 48,
-                                        color: AppConstants.primaryGreen,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        'Verify Phone Number',
-                                        style: AppConstants.headingStyle
-                                            .copyWith(fontSize: 20),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Enter the 6-digit code sent to',
-                                        style: AppConstants.bodyStyle.copyWith(
-                                          color: AppConstants.textSecondary,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _verifiedPhone,
-                                        style: AppConstants.bodyStyle.copyWith(
+                      return SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          24,
+                          32,
+                          24,
+                          32 + viewInsets,
+                        ),
+                        child: GestureDetector(
+                          // Prevent tap events from propagating to parent (prevents closing)
+                          onTap: () {},
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: 460,
+                              minWidth: modalWidth,
+                            ),
+                            child: Material(
+                              borderRadius: BorderRadius.circular(18),
+                              color: Colors.white,
+                              elevation: 8,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 28,
+                                ),
+                                child: LayoutBuilder(
+                                  builder: (context, modalConstraints) {
+                                    final bool isNarrow =
+                                        modalConstraints.maxWidth < 360;
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.sms,
+                                          size: 48,
                                           color: AppConstants.primaryGreen,
-                                          fontWeight: FontWeight.bold,
                                         ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 28),
-
-                                      // OTP Input Field (single line)
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: TextFormField(
-                                          controller: _otpInputController,
-                                          keyboardType: TextInputType.number,
-                                          textAlign: TextAlign.center,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                            LengthLimitingTextInputFormatter(6),
-                                          ],
-                                          style: const TextStyle(
-                                            fontSize: 22,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: 12,
-                                          ),
-                                          decoration: InputDecoration(
-                                            hintText: '••••••',
-                                            hintStyle: TextStyle(
-                                              color: Colors.grey.shade400,
-                                              letterSpacing: 12,
-                                            ),
-                                            counterText: '',
-                                            filled: true,
-                                            fillColor: Colors.grey.shade100,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  vertical: 14,
-                                                  horizontal: 12,
-                                                ),
-                                            border: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              borderSide: const BorderSide(
-                                                color:
-                                                    AppConstants.primaryGreen,
-                                                width: 2,
-                                              ),
-                                            ),
-                                            focusedBorder: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              borderSide: const BorderSide(
-                                                color:
-                                                    AppConstants.primaryGreen,
-                                                width: 2.5,
-                                              ),
-                                            ),
-                                            enabledBorder: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              borderSide: BorderSide(
-                                                color: Colors.grey.shade300,
-                                                width: 2,
-                                              ),
-                                            ),
-                                          ),
-                                          onChanged: (value) {
-                                            setState(() => _otp = value);
-                                            if (value.length == 6) {
-                                              FocusScope.of(context).unfocus();
-                                            }
-                                          },
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 14),
-
-                                      // Countdown Timer
-                                      if (_otpCountdown > 0)
+                                        const SizedBox(height: 16),
                                         Text(
-                                          'Code expires in ${_formatCountdown(_otpCountdown)}',
+                                          'Verify Phone Number',
+                                          style: AppConstants.headingStyle
+                                              .copyWith(fontSize: 20),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Enter the 6-digit code sent to',
                                           style: AppConstants.bodyStyle
                                               .copyWith(
                                                 color:
-                                                    AppConstants.warningOrange,
+                                                    AppConstants.textSecondary,
+                                              ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _verifiedPhone,
+                                          style: AppConstants.bodyStyle
+                                              .copyWith(
+                                                color:
+                                                    AppConstants.primaryGreen,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                           textAlign: TextAlign.center,
-                                        )
-                                      else
-                                        Text(
-                                          'Code has expired. Please request a new one.',
-                                          style: AppConstants.bodyStyle
-                                              .copyWith(
-                                                color: AppConstants.errorRed,
-                                              ),
-                                          textAlign: TextAlign.center,
                                         ),
+                                        const SizedBox(height: 28),
 
-                                      const SizedBox(height: 22),
-
-                                      // Buttons
-                                      if (isNarrow)
-                                        Column(
-                                          children: [
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: OutlinedButton(
-                                                onPressed: _closeOtpModal,
-                                                child: const Text('Cancel'),
+                                        // OTP Input Field (single line)
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: TextFormField(
+                                            controller: _otpInputController,
+                                            keyboardType: TextInputType.number,
+                                            textAlign: TextAlign.center,
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter
+                                                  .digitsOnly,
+                                              LengthLimitingTextInputFormatter(
+                                                6,
+                                              ),
+                                            ],
+                                            style: const TextStyle(
+                                              fontSize: 22,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 12,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText: '••••••',
+                                              hintStyle: TextStyle(
+                                                color: Colors.grey.shade400,
+                                                letterSpacing: 12,
+                                              ),
+                                              counterText: '',
+                                              filled: true,
+                                              fillColor: Colors.grey.shade100,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 14,
+                                                    horizontal: 12,
+                                                  ),
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                borderSide: const BorderSide(
+                                                  color:
+                                                      AppConstants.primaryGreen,
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              focusedBorder: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                borderSide: const BorderSide(
+                                                  color:
+                                                      AppConstants.primaryGreen,
+                                                  width: 2.5,
+                                                ),
+                                              ),
+                                              enabledBorder: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                borderSide: BorderSide(
+                                                  color: Colors.grey.shade300,
+                                                  width: 2,
+                                                ),
                                               ),
                                             ),
-                                            const SizedBox(height: 12),
-                                            SizedBox(
-                                              width: double.infinity,
-                                              child: ElevatedButton(
-                                                onPressed: _otp.length == 6
-                                                    ? _verifyOtp
-                                                    : null,
-                                                child: _isLoading
-                                                    ? const SizedBox(
-                                                        height: 20,
-                                                        width: 20,
-                                                        child: CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          valueColor:
-                                                              AlwaysStoppedAnimation<
-                                                                Color
-                                                              >(Colors.white),
-                                                        ),
-                                                      )
-                                                    : const Text('Verify'),
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                      else
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: OutlinedButton(
-                                                onPressed: _closeOtpModal,
-                                                child: const Text('Cancel'),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 16),
-                                            Expanded(
-                                              child: ElevatedButton(
-                                                onPressed: _otp.length == 6
-                                                    ? _verifyOtp
-                                                    : null,
-                                                child: _isLoading
-                                                    ? const SizedBox(
-                                                        height: 20,
-                                                        width: 20,
-                                                        child: CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          valueColor:
-                                                              AlwaysStoppedAnimation<
-                                                                Color
-                                                              >(Colors.white),
-                                                        ),
-                                                      )
-                                                    : const Text('Verify'),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-
-                                      const SizedBox(height: 16),
-
-                                      // Resend OTP
-                                      if (_otpCountdown == 0)
-                                        TextButton(
-                                          onPressed: () async {
-                                            await _sendOtp();
-                                          },
-                                          child: Text(
-                                            'Resend OTP',
-                                            style: TextStyle(
-                                              color: AppConstants.primaryGreen,
-                                            ),
+                                            onChanged: (value) {
+                                              setState(() => _otp = value);
+                                              if (value.length == 6) {
+                                                FocusScope.of(
+                                                  context,
+                                                ).unfocus();
+                                              }
+                                            },
                                           ),
                                         ),
-                                    ],
-                                  );
-                                },
+
+                                        const SizedBox(height: 14),
+
+                                        // Countdown Timer
+                                        if (_otpCountdown > 0)
+                                          Text(
+                                            'Code expires in ${_formatCountdown(_otpCountdown)}',
+                                            style: AppConstants.bodyStyle
+                                                .copyWith(
+                                                  color: AppConstants
+                                                      .warningOrange,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                            textAlign: TextAlign.center,
+                                          )
+                                        else
+                                          Text(
+                                            'Code has expired. Please request a new one.',
+                                            style: AppConstants.bodyStyle
+                                                .copyWith(
+                                                  color: AppConstants.errorRed,
+                                                ),
+                                            textAlign: TextAlign.center,
+                                          ),
+
+                                        const SizedBox(height: 22),
+
+                                        // Buttons
+                                        if (isNarrow)
+                                          Column(
+                                            children: [
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: OutlinedButton(
+                                                  onPressed: () async {
+                                                    // Show confirmation before closing
+                                                    final shouldClose = await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (context) => AlertDialog(
+                                                        title: const Text(
+                                                          'Cancel OTP Verification?',
+                                                        ),
+                                                        content: const Text(
+                                                          'If you cancel, you will need to request a new OTP code.',
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  context,
+                                                                  false,
+                                                                ),
+                                                            child: const Text(
+                                                              'No, Continue',
+                                                            ),
+                                                          ),
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  context,
+                                                                  true,
+                                                                ),
+                                                            child: const Text(
+                                                              'Yes, Cancel',
+                                                              style: TextStyle(
+                                                                color:
+                                                                    AppConstants
+                                                                        .errorRed,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                    if (shouldClose == true &&
+                                                        mounted) {
+                                                      _closeOtpModal();
+                                                    }
+                                                  },
+                                                  child: const Text('Cancel'),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              SizedBox(
+                                                width: double.infinity,
+                                                child: ElevatedButton(
+                                                  onPressed: _otp.length == 6
+                                                      ? _verifyOtp
+                                                      : null,
+                                                  child: _isLoading
+                                                      ? const SizedBox(
+                                                          height: 20,
+                                                          width: 20,
+                                                          child: CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            valueColor:
+                                                                AlwaysStoppedAnimation<
+                                                                  Color
+                                                                >(Colors.white),
+                                                          ),
+                                                        )
+                                                      : const Text('Verify'),
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        else
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: OutlinedButton(
+                                                  onPressed: () async {
+                                                    // Show confirmation before closing
+                                                    final shouldClose = await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (context) => AlertDialog(
+                                                        title: const Text(
+                                                          'Cancel OTP Verification?',
+                                                        ),
+                                                        content: const Text(
+                                                          'If you cancel, you will need to request a new OTP code.',
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  context,
+                                                                  false,
+                                                                ),
+                                                            child: const Text(
+                                                              'No, Continue',
+                                                            ),
+                                                          ),
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                  context,
+                                                                  true,
+                                                                ),
+                                                            child: const Text(
+                                                              'Yes, Cancel',
+                                                              style: TextStyle(
+                                                                color:
+                                                                    AppConstants
+                                                                        .errorRed,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                    if (shouldClose == true &&
+                                                        mounted) {
+                                                      _closeOtpModal();
+                                                    }
+                                                  },
+                                                  child: const Text('Cancel'),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              Expanded(
+                                                child: ElevatedButton(
+                                                  onPressed: _otp.length == 6
+                                                      ? _verifyOtp
+                                                      : null,
+                                                  child: _isLoading
+                                                      ? const SizedBox(
+                                                          height: 20,
+                                                          width: 20,
+                                                          child: CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            valueColor:
+                                                                AlwaysStoppedAnimation<
+                                                                  Color
+                                                                >(Colors.white),
+                                                          ),
+                                                        )
+                                                      : const Text('Verify'),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+
+                                        const SizedBox(height: 16),
+
+                                        // Resend OTP
+                                        if (_otpCountdown == 0)
+                                          TextButton(
+                                            onPressed: () async {
+                                              final phoneToUse =
+                                                  _otpSendPhone.isNotEmpty
+                                                  ? _otpSendPhone
+                                                  : _formatPhoneNumber(
+                                                      _phoneController.text
+                                                          .trim(),
+                                                    );
+                                              await _sendOtp(
+                                                phoneNumber: phoneToUse,
+                                              );
+                                            },
+                                            child: Text(
+                                              'Resend OTP',
+                                              style: TextStyle(
+                                                color:
+                                                    AppConstants.primaryGreen,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

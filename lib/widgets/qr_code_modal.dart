@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class QrCodeModal extends StatefulWidget {
   final String childName;
@@ -30,11 +32,19 @@ class _QrCodeModalState extends State<QrCodeModal> {
   Widget build(BuildContext context) {
     final childName = widget.childName;
     final qrCodeUrl = widget.qrCodeUrl;
+    final screenHeight = MediaQuery.of(context).size.height;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: screenHeight * 0.85, // Max 85% of screen height
+          maxWidth: 400, // Max width for larger screens
+        ),
       child: Container(
         padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -107,29 +117,31 @@ class _QrCodeModalState extends State<QrCodeModal> {
               textAlign: TextAlign.center,
             ),
 
-            const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-            // Download button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _downloadQrCodeWithHeader,
-                icon: _isDownloading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                    : const Icon(Icons.download),
-                label: Text(_isDownloading ? 'Downloading...' : 'Download QR'),
-              ),
+                // Download button - Always visible at the bottom
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isDownloading ? null : _downloadQrCodeWithHeader,
+                    icon: _isDownloading
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Icon(Icons.download),
+                    label: Text(_isDownloading ? 'Downloading...' : 'Download QR'),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -189,12 +201,70 @@ class _QrCodeModalState extends State<QrCodeModal> {
       }
 
       final fileName = _buildFileName(widget.childName);
-      final filePath = await _savePngToPrivateDirectory(
-        pngBytes.buffer.asUint8List(),
-        fileName,
-      );
+      
+      // 4. Request permissions and save to appropriate directory
+      String filePath;
+      if (Platform.isAndroid) {
+        final isAndroid13OrHigher = await _isAndroid13OrHigher();
+        
+        if (isAndroid13OrHigher) {
+          // Android 13+ requires manage external storage permission
+          final managePermission = await Permission.manageExternalStorage.request();
+          if (managePermission.isGranted) {
+            filePath = await _savePngToDownloadsDirectory(
+              pngBytes.buffer.asUint8List(),
+              fileName,
+            );
+          } else {
+            // Fallback to private directory if permission denied
+            filePath = await _savePngToPrivateDirectory(
+              pngBytes.buffer.asUint8List(),
+              fileName,
+            );
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'QR saved to app folder. Enable "All files access" in settings to save to Downloads.',
+                ),
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+        } else {
+          // Android 12 and below - request storage permission
+          final storagePermission = await Permission.storage.request();
+          if (storagePermission.isGranted) {
+            filePath = await _savePngToDownloadsDirectory(
+              pngBytes.buffer.asUint8List(),
+              fileName,
+            );
+          } else {
+            // Fallback to private directory
+            filePath = await _savePngToPrivateDirectory(
+              pngBytes.buffer.asUint8List(),
+              fileName,
+            );
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Storage permission denied. QR saved to app folder.',
+                ),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } else {
+        // iOS - use app documents directory
+        filePath = await _savePngToPrivateDirectory(
+          pngBytes.buffer.asUint8List(),
+          fileName,
+        );
+      }
 
-      // 4. Open the file so user can view/share it
+      // 5. Open the file so user can view/share it
       await OpenFilex.open(filePath);
 
       if (!mounted) return;
@@ -389,6 +459,45 @@ class _QrCodeModalState extends State<QrCodeModal> {
     final file = File('${dir.path}/$fileName');
     await file.writeAsBytes(bytes);
     return file.path;
+  }
+
+  Future<String> _savePngToDownloadsDirectory(
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    if (Platform.isAndroid) {
+      // Get external storage directory
+      final externalDir = await getExternalStorageDirectory();
+      if (externalDir != null) {
+        // Navigate to Downloads folder
+        final downloadsPath = '${externalDir.path.split('Android')[0]}Download';
+        final downloadsDir = Directory(downloadsPath);
+        
+        // Create Downloads directory if it doesn't exist
+        if (!await downloadsDir.exists()) {
+          await downloadsDir.create(recursive: true);
+        }
+        
+        final file = File('${downloadsDir.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        return file.path;
+      }
+    }
+    
+    // Fallback to private directory if external storage is not available
+    return await _savePngToPrivateDirectory(bytes, fileName);
+  }
+
+  Future<bool> _isAndroid13OrHigher() async {
+    if (!Platform.isAndroid) return false;
+    
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.version.sdkInt >= 33; // Android 13 is API 33
+    } catch (e) {
+      return false;
+    }
   }
 
   String _buildFileName(String childName) {

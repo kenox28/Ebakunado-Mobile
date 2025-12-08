@@ -47,6 +47,9 @@ void main() async {
   runApp(const MyApp());
 }
 
+// Global navigator key for accessing navigator from anywhere
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -63,6 +66,7 @@ class MyApp extends StatelessWidget {
         title: 'Ebakunado',
         theme: AppConstants.appTheme,
         debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey, // Add global navigator key
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           switch (settings.name) {

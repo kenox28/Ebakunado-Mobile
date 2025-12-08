@@ -6,6 +6,7 @@ import '../models/immunization.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/app_bottom_navigation.dart';
 
 class ImmunizationScheduleScreen extends StatefulWidget {
   final String babyId;
@@ -45,7 +46,10 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
     });
 
     try {
-      final response = await ApiClient.instance.getImmunizationSchedule();
+      // Pass babyId to ensure transferred children's vaccination records are included
+      final response = await ApiClient.instance.getImmunizationSchedule(
+        babyId: widget.babyId,
+      );
 
       // Handle JSON string response
       Map<String, dynamic> responseData;
@@ -149,6 +153,9 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
       ),
       drawer: const AppDrawer(),
       body: _buildBody(),
+      bottomNavigationBar: const AppBottomNavigation(
+        current: BottomNavDestination.myChildren,
+      ),
     );
   }
 

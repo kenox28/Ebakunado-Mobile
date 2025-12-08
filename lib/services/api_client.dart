@@ -192,7 +192,11 @@ class ApiClient {
 
   // Get accepted children
   Future<Response> getAcceptedChildren() async {
-    return await _dio.get(AppConstants.acceptedChildEndpoint);
+    // Use scope=all to get all children including transfers
+    return await _dio.get(
+      AppConstants.acceptedChildEndpoint,
+      queryParameters: {'scope': 'all'},
+    );
   }
 
   // Get dashboard summary
@@ -229,10 +233,19 @@ class ApiClient {
   }
 
   // Get immunization schedule
-  Future<Response> getImmunizationSchedule() async {
+  // Optional babyId parameter: when provided, backend will include transferred children
+  // When not provided, backend filters by status='accepted' only
+  Future<Response> getImmunizationSchedule({String? babyId}) async {
     await _ensureInitialized();
 
-    final response = await _dio.get(AppConstants.immunizationScheduleEndpoint);
+    final queryParameters = babyId != null && babyId.isNotEmpty
+        ? {'baby_id': babyId}
+        : null;
+
+    final response = await _dio.get(
+      AppConstants.immunizationScheduleEndpoint,
+      queryParameters: queryParameters,
+    );
 
     return response;
   }
@@ -708,14 +721,51 @@ class ApiClient {
 
     final formData = FormData.fromMap({'phone_number': phoneNumber});
 
-    final response = await _dio.post(
-      AppConstants.sendOtpEndpoint,
-      data: formData,
-      options: Options(contentType: 'multipart/form-data'),
-    );
+    try {
+      final response = await _dio.post(
+        AppConstants.sendOtpEndpoint,
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          // Increase timeouts for OTP requests (SMS can take longer)
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
 
-    print('OTP Response: ${response.data}');
-    return OtpResponse.fromJson(response.data);
+      print('OTP Response: ${response.data}');
+      return OtpResponse.fromJson(response.data);
+    } on DioException catch (e) {
+      // Handle specific DioException types
+      String errorMessage = 'Failed to send OTP';
+
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        errorMessage =
+            'Request timeout. Please check your internet connection and try again.';
+      } else if (e.type == DioExceptionType.connectionError) {
+        errorMessage =
+            'Connection error. Please check your internet connection.';
+      } else if (e.message?.contains('Connection closed') == true) {
+        errorMessage =
+            'Server connection closed. The server may be busy. Please try again in a moment.';
+      } else if (e.response != null) {
+        // Server responded with error
+        errorMessage =
+            e.response?.data['message'] ??
+            'Failed to send OTP. Please try again.';
+      } else {
+        errorMessage =
+            'Network error: ${e.message ?? "Unknown error"}. Please try again.';
+      }
+
+      print('OTP Error: ${e.type} - ${e.message}');
+      throw Exception(errorMessage);
+    } catch (e) {
+      print('OTP Error Details: $e');
+      rethrow;
+    }
   }
 
   // Verify OTP

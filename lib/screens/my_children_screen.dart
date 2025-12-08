@@ -91,11 +91,14 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
   void _applyFilter() {
     setState(() {
       if (_selectedFilter == 'pending') {
-        _filteredChildren =
-            _allChildren.where((child) => child.isPending).toList();
+        _filteredChildren = _allChildren
+            .where((child) => child.isPending)
+            .toList();
       } else {
-        _filteredChildren =
-            _allChildren.where((child) => child.isAccepted).toList();
+        // Show both 'accepted' AND 'transfer' statuses in approved children
+        _filteredChildren = _allChildren
+            .where((child) => child.isAccepted || child.isTransfer)
+            .toList();
       }
     });
   }
@@ -106,17 +109,6 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         _selectedFilter = newFilter;
       });
       _applyFilter();
-    }
-  }
-
-  String _getFilterDisplayName(String filter) {
-    switch (filter) {
-      case 'pending':
-        return 'Pending Registration';
-      case 'accepted':
-        return 'Approved Children';
-      default:
-        return 'Approved Children';
     }
   }
 
@@ -171,10 +163,6 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
       );
     }
 
-    if (_filteredChildren.isEmpty) {
-      return _buildEmptyState();
-    }
-
     return RefreshIndicator(
       onRefresh: _loadData,
       child: SingleChildScrollView(
@@ -184,12 +172,10 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
           children: [
             _buildFilterControls(),
             const SizedBox(height: 16),
-            Text(
-              '${_getFilterDisplayName(_selectedFilter)} (${_filteredChildren.length})',
-              style: AppConstants.subheadingStyle,
-            ),
-            const SizedBox(height: 16),
-            _buildChildrenTable(),
+            if (_filteredChildren.isEmpty)
+              _buildEmptyState()
+            else
+              _buildChildrenTable(),
           ],
         ),
       ),
@@ -246,11 +232,15 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
                     CircleAvatar(
                       backgroundColor: child.isAccepted
                           ? AppConstants.successGreen.withValues(alpha: 0.1)
+                          : child.isTransfer
+                          ? AppConstants.alertInfo.withValues(alpha: 0.1)
                           : AppConstants.warningOrange.withValues(alpha: 0.1),
                       child: Icon(
-                        Icons.child_care,
+                        child.isTransfer ? Icons.swap_horiz : Icons.child_care,
                         color: child.isAccepted
                             ? AppConstants.successGreen
+                            : child.isTransfer
+                            ? AppConstants.alertInfo
                             : AppConstants.warningOrange,
                       ),
                     ),
@@ -259,12 +249,19 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            child.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  child.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              _buildStatusBadge(child),
+                            ],
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -333,38 +330,34 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
   }
 
   Widget _buildFilterControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Filter by status',
-          style: AppConstants.subheadingStyle.copyWith(fontSize: 16),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _selectedFilter,
+        decoration: InputDecoration(
+          labelText: 'Filter by status',
+          labelStyle: AppConstants.subheadingStyle.copyWith(fontSize: 14),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            FilterChip(
-              label: const Text('Approved'),
-              selected: _selectedFilter == 'accepted',
-              onSelected: (selected) {
-                if (selected) {
-                  _onFilterChanged('accepted');
-                }
-              },
-            ),
-            FilterChip(
-              label: const Text('Pending'),
-              selected: _selectedFilter == 'pending',
-              onSelected: (selected) {
-                if (selected) {
-                  _onFilterChanged('pending');
-                }
-              },
-            ),
-          ],
-        ),
-      ],
+        items: const [
+          DropdownMenuItem(value: 'accepted', child: Text('Approved Children')),
+          DropdownMenuItem(
+            value: 'pending',
+            child: Text('Pending Registration'),
+          ),
+        ],
+        onChanged: _onFilterChanged,
+        isExpanded: true,
+        icon: const Icon(Icons.arrow_drop_down),
+      ),
     );
   }
 
@@ -379,6 +372,50 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         ),
         Text(label, style: AppConstants.captionStyle),
       ],
+    );
+  }
+
+  Widget _buildStatusBadge(ChildListItem child) {
+    String statusText;
+    Color backgroundColor;
+    Color textColor;
+
+    if (child.isTransfer) {
+      statusText = 'Transferred';
+      backgroundColor = AppConstants.alertInfo.withValues(alpha: 0.1);
+      textColor = AppConstants.alertInfo;
+    } else if (child.isAccepted) {
+      statusText = 'Approved';
+      backgroundColor = AppConstants.successGreen.withValues(alpha: 0.1);
+      textColor = AppConstants.successGreen;
+    } else if (child.isPending) {
+      statusText = 'Pending';
+      backgroundColor = AppConstants.warningOrange.withValues(alpha: 0.1);
+      textColor = AppConstants.warningOrange;
+    } else {
+      statusText = '';
+      backgroundColor = Colors.transparent;
+      textColor = Colors.transparent;
+    }
+
+    if (statusText.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        statusText,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: textColor,
+        ),
+      ),
     );
   }
 }

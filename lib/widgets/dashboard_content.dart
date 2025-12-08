@@ -239,6 +239,7 @@ class DashboardContent extends StatelessWidget {
         }
 
         return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(AppConstants.defaultPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

@@ -9,25 +9,33 @@ class NotificationPanel extends StatelessWidget {
 
   const NotificationPanel({super.key, required this.scrollController});
 
-  String _mapActionUrlToRoute(String? actionUrl) {
-    if (actionUrl == null) return AppConstants.homeRoute;
+  // Returns route and arguments for navigation
+  // Returns null for route if notification should not navigate (just mark as read)
+  Map<String, dynamic>? _mapActionUrlToRoute(String? actionUrl) {
+    if (actionUrl == null || actionUrl.isEmpty) {
+      return null; // No navigation, just mark as read
+    }
 
     switch (actionUrl) {
       case './home.php':
-        return AppConstants.homeRoute;
+        return {'route': AppConstants.homeRoute, 'arguments': null};
       case './Request.php':
-        return AppConstants.requestChildRoute;
+        return {'route': AppConstants.requestChildRoute, 'arguments': null};
       case './approved_requests.php':
-        return AppConstants.approvedRequestsRoute;
+        return {'route': AppConstants.approvedRequestsRoute, 'arguments': null};
       default:
         if (actionUrl.startsWith('./upcoming_schedule.php')) {
           final uri = Uri.parse(actionUrl);
           final babyId = uri.queryParameters['baby_id'];
-          return babyId != null
-              ? '${AppConstants.upcomingScheduleRoute}?baby_id=$babyId'
-              : AppConstants.upcomingScheduleRoute;
+          if (babyId != null) {
+            return {
+              'route': AppConstants.upcomingScheduleRoute,
+              'arguments': {'baby_id': babyId},
+            };
+          }
+          return {'route': AppConstants.homeRoute, 'arguments': null};
         }
-        return AppConstants.homeRoute;
+        return {'route': AppConstants.homeRoute, 'arguments': null};
     }
   }
 
@@ -109,13 +117,31 @@ class NotificationPanel extends StatelessWidget {
                               );
                             }
 
-                            // Navigate to the appropriate route
-                            final route = _mapActionUrlToRoute(
+                            // Get route and arguments for navigation
+                            final routeData = _mapActionUrlToRoute(
                               notification.actionUrl,
                             );
+
                             if (context.mounted) {
                               Navigator.pop(context); // Close the panel
-                              Navigator.pushNamed(context, route);
+                              
+                              // Only navigate if there's a valid route
+                              if (routeData != null) {
+                                final route = routeData['route'] as String;
+                                final arguments = routeData['arguments'] as Map<String, dynamic>?;
+                                
+                                // Navigate with arguments if available
+                                if (arguments != null) {
+                                  Navigator.pushNamed(
+                                    context,
+                                    route,
+                                    arguments: arguments,
+                                  );
+                                } else {
+                                  Navigator.pushNamed(context, route);
+                                }
+                              }
+                              // If routeData is null, just close the panel (notification marked as read)
                             }
                           },
                         );

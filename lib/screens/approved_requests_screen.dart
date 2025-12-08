@@ -6,11 +6,13 @@ import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../services/api_client.dart';
 import '../models/chr_requests.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/app_bottom_navigation.dart';
 
 class ApprovedRequestsScreen extends StatefulWidget {
   const ApprovedRequestsScreen({super.key});
@@ -208,35 +210,325 @@ class _ApprovedRequestsScreenState extends State<ApprovedRequestsScreen> {
   }
 
   Future<String> _savePdf(Uint8List pdfBytes, String childName) async {
-    // Request storage permission if needed
-    if (Platform.isAndroid) {
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        throw Exception('Storage permission denied');
-      }
-    }
+    final fileName = _getFileName(childName);
+    String filePath;
 
-    // Get downloads directory
-    Directory? directory;
     if (Platform.isAndroid) {
-      directory = await getExternalStorageDirectory();
-      // Navigate to Downloads folder
-      if (directory != null) {
-        final downloadsPath = directory.path.split('Android')[0] + 'Download';
-        directory = Directory(downloadsPath);
-        if (!await directory.exists()) {
-          directory = await getApplicationDocumentsDirectory();
+      final isAndroid13OrHigher = await _isAndroid13OrHigher();
+
+      if (isAndroid13OrHigher) {
+        // Android 13+ requires manage external storage permission
+        final managePermission = await Permission.manageExternalStorage
+            .request();
+
+        if (managePermission.isGranted) {
+          // Try to save to Downloads directory
+          try {
+            filePath = await _savePdfToDownloadsDirectory(pdfBytes, fileName);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Baby Card saved to Downloads: $fileName'),
+                  backgroundColor: AppConstants.successGreen,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+            return filePath;
+          } catch (e) {
+            debugPrint('⚠️ Failed to save to Downloads directory: $e');
+            // Show specific error message
+            if (mounted) {
+              final errorMsg =
+                  e.toString().contains('Permission') ||
+                      e.toString().contains('permission')
+                  ? 'Storage permission issue. Saving to app folder instead.'
+                  : 'Cannot save to Downloads folder. Saving to app folder instead.';
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(errorMsg),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+            // Fall through to private directory fallback
+          }
+        } else if (managePermission.isPermanentlyDenied) {
+          // Permission permanently denied - need to open settings
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Storage permission required. Please enable "All files access" in settings.',
+                ),
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Open Settings',
+                  textColor: Colors.white,
+                  onPressed: () async {
+                    await Permission.manageExternalStorage.request();
+                  },
+                ),
+              ),
+            );
+          }
+        } else {
+          // Permission denied (but not permanently)
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Storage permission denied. Baby Card will be saved to app folder.',
+                ),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+
+        // Fallback to private directory
+        filePath = await _savePdfToPrivateDirectory(pdfBytes, fileName);
+        if (mounted && !managePermission.isGranted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Baby Card saved to app folder. Enable "All files access" in settings to save to Downloads.',
+              ),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        // Android 12 and below - request storage permission
+        final storagePermission = await Permission.storage.request();
+
+        if (storagePermission.isGranted) {
+          // Try to save to Downloads directory
+          try {
+            filePath = await _savePdfToDownloadsDirectory(pdfBytes, fileName);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Baby Card saved to Downloads: $fileName'),
+                  backgroundColor: AppConstants.successGreen,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+            return filePath;
+          } catch (e) {
+            debugPrint('⚠️ Failed to save to Downloads directory: $e');
+            // Show specific error message
+            if (mounted) {
+              final errorMsg =
+                  e.toString().contains('Permission') ||
+                      e.toString().contains('permission')
+                  ? 'Storage permission issue. Saving to app folder instead.'
+                  : 'Cannot save to Downloads folder. Saving to app folder instead.';
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(errorMsg),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+            // Fall through to private directory fallback
+          }
+        } else if (storagePermission.isPermanentlyDenied) {
+          // Permission permanently denied - need to open settings
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Storage permission required. Please enable storage access in settings.',
+                ),
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Open Settings',
+                  textColor: Colors.white,
+                  onPressed: () async {
+                    await openAppSettings();
+                  },
+                ),
+              ),
+            );
+          }
+        } else {
+          // Permission denied (but not permanently)
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Storage permission denied. Baby Card will be saved to app folder.',
+                ),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+
+        // Fallback to private directory
+        filePath = await _savePdfToPrivateDirectory(pdfBytes, fileName);
+        if (mounted && !storagePermission.isGranted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Storage permission denied. Baby Card saved to app folder.',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
         }
       }
     } else {
-      directory = await getApplicationDocumentsDirectory();
+      // iOS - use app documents directory
+      filePath = await _savePdfToPrivateDirectory(pdfBytes, fileName);
     }
 
-    final fileName = _getFileName(childName);
-    final file = File('${directory!.path}/$fileName');
-    await file.writeAsBytes(pdfBytes);
+    return filePath;
+  }
 
+  Future<String> _savePdfToPrivateDirectory(
+    Uint8List pdfBytes,
+    String fileName,
+  ) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/$fileName');
+    await file.writeAsBytes(pdfBytes);
     return file.path;
+  }
+
+  Future<String> _savePdfToDownloadsDirectory(
+    Uint8List pdfBytes,
+    String fileName,
+  ) async {
+    if (Platform.isAndroid) {
+      try {
+        // Get external storage directory
+        final externalDir = await getExternalStorageDirectory();
+        if (externalDir == null) {
+          throw Exception('External storage directory not available');
+        }
+
+        // Navigate to Downloads folder
+        // Handle different path structures for different devices
+        final externalPath = externalDir.path;
+
+        debugPrint('External storage path: $externalPath');
+
+        // Try multiple common Downloads paths
+        final possiblePaths = [
+          // Standard Android path
+          externalPath.contains('Android')
+              ? '${externalPath.split('Android')[0]}Download'
+              : null,
+          // Direct emulated path
+          '/storage/emulated/0/Download',
+          // Alternative path
+          '/sdcard/Download',
+          // External SD card path (if available)
+          '/storage/sdcard1/Download',
+        ];
+
+        Directory? downloadsDir;
+        String? selectedPath;
+
+        // Try each path until we find one that works
+        for (final path in possiblePaths) {
+          if (path == null) continue;
+
+          try {
+            final dir = Directory(path);
+            if (await dir.exists() || await _canCreateDirectory(dir)) {
+              downloadsDir = dir;
+              selectedPath = path;
+              debugPrint('Using Downloads path: $path');
+              break;
+            }
+          } catch (e) {
+            debugPrint('Path $path not accessible: $e');
+            continue;
+          }
+        }
+
+        if (downloadsDir == null || selectedPath == null) {
+          throw Exception('Downloads directory not accessible on this device');
+        }
+
+        // Create Downloads directory if it doesn't exist
+        if (!await downloadsDir.exists()) {
+          try {
+            await downloadsDir.create(recursive: true);
+          } catch (e) {
+            debugPrint('Cannot create Downloads directory: $e');
+            throw Exception('Cannot create Downloads directory: $e');
+          }
+        }
+
+        // Check if we can write to the directory
+        final testFile = File(
+          '${downloadsDir.path}/.ebakunado_test_${DateTime.now().millisecondsSinceEpoch}',
+        );
+        try {
+          await testFile.writeAsString('test');
+          await testFile.delete();
+        } catch (e) {
+          debugPrint('Cannot write to Downloads directory: $e');
+          throw Exception(
+            'Cannot write to Downloads directory. Permission may be denied or directory is read-only.',
+          );
+        }
+
+        // Save the actual file
+        final file = File('${downloadsDir.path}/$fileName');
+        try {
+          await file.writeAsBytes(pdfBytes);
+          debugPrint('✅ Baby Card saved to Downloads: ${file.path}');
+          return file.path;
+        } catch (e) {
+          debugPrint('Failed to write file to Downloads: $e');
+          throw Exception('Failed to save file: $e');
+        }
+      } catch (e) {
+        debugPrint('❌ Error saving to Downloads directory: $e');
+        // Re-throw with more context
+        throw Exception('Downloads save failed: ${e.toString()}');
+      }
+    }
+
+    // Fallback to private directory if external storage is not available
+    return await _savePdfToPrivateDirectory(pdfBytes, fileName);
+  }
+
+  Future<bool> _canCreateDirectory(Directory dir) async {
+    try {
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      // Test write
+      final testFile = File('${dir.path}/.test');
+      await testFile.writeAsString('test');
+      await testFile.delete();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> _isAndroid13OrHigher() async {
+    if (!Platform.isAndroid) return false;
+
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.version.sdkInt >= 33; // Android 13 is API 33
+    } catch (e) {
+      return false;
+    }
   }
 
   String _getFileName(String childName) {
@@ -258,6 +550,9 @@ class _ApprovedRequestsScreenState extends State<ApprovedRequestsScreen> {
       ),
       drawer: const AppDrawer(),
       body: _buildBody(),
+      bottomNavigationBar: const AppBottomNavigation(
+        current: BottomNavDestination.dashboard,
+      ),
     );
   }
 
