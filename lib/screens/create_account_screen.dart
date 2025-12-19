@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:country_picker/country_picker.dart';
+import 'package:provider/provider.dart';
 import 'dart:async';
 import '../services/api_client.dart';
+import '../providers/auth_provider.dart';
 import '../models/create_account_request.dart';
 import '../utils/constants.dart';
 import '../mixins/animated_alert_mixin.dart';
@@ -37,10 +39,12 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
 
   // Form state
   String _gender = '';
+  String _relationship = '';
   bool _agreedToTerms = false;
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
   CreateAccountRequest? _pendingRequest;
   String _otpSendPhone = '';
 
@@ -69,6 +73,41 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     _otpInputController.dispose();
     _otpTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handleGoogleSignUp() async {
+    setState(() => _isGoogleLoading = true);
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+      // Step 1: Get Google account
+      final account = await authProvider.googleSignUpStep1(
+        showGlobalLoading: false,
+      );
+
+      if (!mounted) return;
+
+      if (account == null) {
+        // User cancelled
+        return;
+      }
+
+      // Step 2: Navigate to complete profile screen
+      Navigator.pushNamed(context, AppConstants.googleCompleteProfileRoute);
+    } catch (e) {
+      debugPrint('Google Sign-Up error: $e');
+      if (mounted) {
+        final errorMessage = e.toString().replaceFirst('Exception: ', '');
+        if (!errorMessage.contains('cancelled')) {
+          showErrorAlert(errorMessage);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGoogleLoading = false);
+      }
+    }
   }
 
   void _startOtpTimer() {
@@ -242,6 +281,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
     }
     if (_gender.isEmpty) {
       showErrorAlert('Please select your gender');
+      return false;
+    }
+    if (_relationship.isEmpty) {
+      showErrorAlert('Please select your relationship to the child');
       return false;
     }
     return true;
@@ -442,6 +485,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
       email: _emailController.text.trim(),
       number: phoneForApi,
       gender: _gender,
+      relationship: _relationship,
       province: _provinceController.text.trim(),
       cityMunicipality: _cityController.text.trim(),
       barangay: _barangayController.text.trim(),
@@ -558,20 +602,19 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
                                                   ),
                                             ),
                                           )
-                                        : FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: Text(
-                                              _currentStep == 0
-                                                  ? 'Next'
-                                                  : _currentStep == 1
-                                                  ? 'Next'
-                                                  : 'Create Account',
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                              ),
-                                              textAlign: TextAlign.center,
-                                              overflow: TextOverflow.ellipsis,
+                                        : Text(
+                                            _currentStep == 0
+                                                ? 'Next'
+                                                : _currentStep == 1
+                                                ? 'Next'
+                                                : 'Create Account',
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
                                             ),
+                                            textAlign: TextAlign.center,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.visible,
                                           ),
                                   ),
                                 ),
@@ -1022,7 +1065,73 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
+
+        // Google Sign-Up Option
+        SizedBox(
+          height: 50,
+          child: OutlinedButton(
+            onPressed: _isLoading || _isGoogleLoading
+                ? null
+                : _handleGoogleSignUp,
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: Colors.grey[400]!),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+              ),
+            ),
+            child: _isGoogleLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.network(
+                        'https://www.google.com/favicon.ico',
+                        width: 20,
+                        height: 20,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.g_mobiledata,
+                          size: 24,
+                          color: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Sign up with Google',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // OR Divider
+        Row(
+          children: [
+            Expanded(child: Divider(color: Colors.grey[400])),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'OR',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: Colors.grey[400])),
+          ],
+        ),
+        const SizedBox(height: 24),
 
         // First Name
         TextFormField(
@@ -1147,6 +1256,32 @@ class _CreateAccountScreenState extends State<CreateAccountScreen>
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'Please select your gender';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+
+        // Relationship Dropdown
+        DropdownButtonFormField<String>(
+          value: _relationship.isEmpty ? null : _relationship,
+          decoration: const InputDecoration(
+            labelText: 'Relationship to Child *',
+            hintText: 'Select your relationship',
+            prefixIcon: Icon(Icons.family_restroom),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'Parents', child: Text('Parents')),
+            DropdownMenuItem(value: 'Guardian', child: Text('Guardian')),
+          ],
+          onChanged: (value) {
+            setState(() {
+              _relationship = value ?? '';
+            });
+          },
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please select your relationship to the child';
             }
             return null;
           },

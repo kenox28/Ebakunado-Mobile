@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../services/api_client.dart';
 import '../models/child_list_item.dart';
+import '../models/immunization.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../widgets/app_bottom_navigation.dart';
@@ -17,8 +18,6 @@ class MyChildrenScreen extends StatefulWidget {
 
 class _MyChildrenScreenState extends State<MyChildrenScreen> {
   List<ChildListItem> _allChildren = [];
-  List<ChildListItem> _filteredChildren = [];
-  String _selectedFilter = 'accepted';
   bool _isLoading = true;
   String? _error;
 
@@ -35,8 +34,8 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
     });
 
     try {
-      // Load children data
-      final response = await ApiClient.instance.getAcceptedChildren();
+      // Load all children data (no filter - all children are automatically registered)
+      final response = await ApiClient.instance.getChildList();
 
       // Parse children data
       Map<String, dynamic> childrenData;
@@ -49,9 +48,13 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
       final childrenResponse = AcceptedChildResponse.fromJson(childrenData);
 
       if (childrenResponse.status == 'success') {
+        // Fetch immunization schedules for all children to get counts
+        final childrenWithCounts = await _fetchImmunizationCounts(
+          childrenResponse.data,
+        );
+
         setState(() {
-          _allChildren = childrenResponse.data;
-          _applyFilter();
+          _allChildren = childrenWithCounts;
           _isLoading = false;
         });
       } else {
@@ -88,39 +91,71 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
     }
   }
 
-  void _applyFilter() {
-    setState(() {
-      if (_selectedFilter == 'pending') {
-        _filteredChildren = _allChildren
-            .where((child) => child.isPending)
-            .toList();
-      } else {
-        // Show both 'accepted' AND 'transfer' statuses in approved children
-        _filteredChildren = _allChildren
-            .where((child) => child.isAccepted || child.isTransfer)
-            .toList();
-      }
-    });
-  }
+  /// Fetch immunization counts for each child
+  Future<List<ChildListItem>> _fetchImmunizationCounts(
+    List<ChildListItem> children,
+  ) async {
+    if (children.isEmpty) return children;
 
-  void _onFilterChanged(String? newFilter) {
-    if (newFilter != null && newFilter != _selectedFilter) {
-      setState(() {
-        _selectedFilter = newFilter;
-      });
-      _applyFilter();
-    }
+    // Fetch immunization schedules for all children in parallel
+    final futures = children.map((child) async {
+      try {
+        final response = await ApiClient.instance.getImmunizationSchedule(
+          babyId: child.babyId,
+        );
+
+        Map<String, dynamic> scheduleData;
+        if (response.data is String) {
+          scheduleData = json.decode(response.data);
+        } else {
+          scheduleData = response.data;
+        }
+
+        final scheduleResponse = ImmunizationScheduleResponse.fromJson(
+          scheduleData,
+        );
+
+        // Count immunizations by status
+        final takenCount = scheduleResponse
+            .getTakenForBaby(child.babyId)
+            .length;
+        final missedCount = scheduleResponse
+            .getMissedForBaby(child.babyId)
+            .length;
+        final scheduledCount = scheduleResponse
+            .getUpcomingForBaby(child.babyId)
+            .length;
+
+        // Return updated child with counts
+        return ChildListItem(
+          id: child.id,
+          babyId: child.babyId,
+          name: child.name,
+          age: child.age,
+          weeksOld: child.weeksOld,
+          gender: child.gender,
+          vaccine: child.vaccine,
+          dose: child.dose,
+          scheduleDate: child.scheduleDate,
+          status: child.status,
+          takenCount: takenCount,
+          missedCount: missedCount,
+          scheduledCount: scheduledCount,
+        );
+      } catch (e) {
+        // If fetching schedule fails, return child with zero counts
+        debugPrint(
+          'Error fetching immunization schedule for ${child.babyId}: $e',
+        );
+        return child;
+      }
+    }).toList();
+
+    return await Future.wait(futures);
   }
 
   String _getEmptyStateMessage() {
-    switch (_selectedFilter) {
-      case 'pending':
-        return 'No children pending registration';
-      case 'accepted':
-        return 'No approved children found';
-      default:
-        return 'No approved children found';
-    }
+    return 'No children found';
   }
 
   @override
@@ -170,9 +205,7 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildFilterControls(),
-            const SizedBox(height: 16),
-            if (_filteredChildren.isEmpty)
+            if (_allChildren.isEmpty)
               _buildEmptyState()
             else
               _buildChildrenTable(),
@@ -202,7 +235,7 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Children will appear here once they are registered',
+              'Add a child to get started',
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
@@ -216,9 +249,9 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: _filteredChildren.length,
+      itemCount: _allChildren.length,
       itemBuilder: (context, index) {
-        final child = _filteredChildren[index];
+        final child = _allChildren[index];
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           elevation: AppConstants.cardElevation,
@@ -326,38 +359,6 @@ class _MyChildrenScreenState extends State<MyChildrenScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildFilterControls() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-      ),
-      child: DropdownButtonFormField<String>(
-        value: _selectedFilter,
-        decoration: InputDecoration(
-          labelText: 'Filter by status',
-          labelStyle: AppConstants.subheadingStyle.copyWith(fontSize: 14),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
-        ),
-        items: const [
-          DropdownMenuItem(value: 'accepted', child: Text('Approved Children')),
-          DropdownMenuItem(
-            value: 'pending',
-            child: Text('Pending Registration'),
-          ),
-        ],
-        onChanged: _onFilterChanged,
-        isExpanded: true,
-        icon: const Icon(Icons.arrow_drop_down),
-      ),
     );
   }
 

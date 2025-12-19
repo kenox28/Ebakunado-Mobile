@@ -17,6 +17,7 @@ import '../models/otp_response.dart';
 import '../models/locations_response.dart';
 import '../models/create_account_response.dart';
 import '../models/csrf_token.dart';
+import '../models/google_sign_in_response.dart';
 
 class AuthExpiredException implements Exception {
   final String message;
@@ -52,6 +53,11 @@ class ApiClient {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36',
         },
         responseType: ResponseType.json, // Force JSON parsing
       ),
@@ -75,13 +81,38 @@ class ApiClient {
       }
     }
 
-    // Add request interceptor to log all requests (BEFORE cookie manager)
+    // Add request interceptor to log all requests and add cache-busting (BEFORE cookie manager)
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
+          // Ensure User-Agent is set (mimics browser to avoid server blocking)
+          if (!options.headers.containsKey('User-Agent')) {
+            options.headers['User-Agent'] =
+                'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36';
+          }
+
+          // Add cache-busting headers to prevent stale responses
+          // Only add to GET requests or if not using FormData
+          final isFormData = options.data is FormData;
+          if (!isFormData) {
+            options.headers['Cache-Control'] =
+                'no-cache, no-store, must-revalidate';
+            options.headers['Pragma'] = 'no-cache';
+            options.headers['Expires'] = '0';
+          }
+
+          // Add timestamp to GET requests as cache-busting parameter
+          if (options.method == 'GET') {
+            options.queryParameters['_t'] = DateTime.now()
+                .millisecondsSinceEpoch
+                .toString();
+          }
+
           debugPrint('🌐 Making request to: ${options.uri}');
           debugPrint('🌐 Full URL: ${options.baseUrl}${options.path}');
           debugPrint('🌐 Method: ${options.method}');
+          debugPrint('🌐 Headers: ${options.headers}');
+          debugPrint('🌐 Data type: ${options.data.runtimeType}');
           handler.next(options);
         },
       ),
@@ -118,6 +149,67 @@ class ApiClient {
           handler.next(response);
         },
         onError: (error, handler) {
+          // Enhanced error logging for debugging
+          debugPrint('═══════════════════════════════════════');
+          debugPrint('🚨 DIO ERROR DETAILS 🚨');
+          debugPrint('═══════════════════════════════════════');
+          debugPrint('Error Type: ${error.type}');
+          debugPrint('Error Message: ${error.message}');
+          debugPrint('Request URL: ${error.requestOptions.uri}');
+          debugPrint('Request Method: ${error.requestOptions.method}');
+          debugPrint('Request Headers: ${error.requestOptions.headers}');
+          debugPrint('Request Data: ${error.requestOptions.data}');
+
+          if (error.type == DioExceptionType.connectionTimeout ||
+              error.type == DioExceptionType.receiveTimeout ||
+              error.type == DioExceptionType.sendTimeout) {
+            debugPrint('⏱️ Timeout error: ${error.type}');
+            debugPrint(
+              '⏱️ Timeout Duration: ${error.requestOptions.connectTimeout}',
+            );
+          } else if (error.type == DioExceptionType.connectionError) {
+            debugPrint('🔌 Connection error: ${error.message}');
+            debugPrint('🔌 Error Object: ${error.error}');
+            debugPrint('🔌 Error Runtime Type: ${error.error?.runtimeType}');
+            if (error.error is SocketException) {
+              final socketError = error.error as SocketException;
+              debugPrint('🔌 Socket Exception: ${socketError.message}');
+              debugPrint('🔌 OS Error: ${socketError.osError}');
+            }
+          } else if (error.response != null) {
+            debugPrint('❌ HTTP Error: ${error.response?.statusCode}');
+            debugPrint('❌ Response Headers: ${error.response?.headers}');
+            debugPrint('❌ Response Data: ${error.response?.data}');
+          } else {
+            debugPrint('❌ Unknown error: ${error.type}');
+            debugPrint('❌ Error Object: ${error.error}');
+            if (error.error is FormatException) {
+              final formatError = error.error as FormatException;
+              debugPrint('❌ FormatException: ${formatError.message}');
+              debugPrint('❌ FormatException Source: ${formatError.source}');
+              debugPrint('❌ FormatException Offset: ${formatError.offset}');
+            }
+            // Try to get raw response if available
+            if (error.response != null) {
+              debugPrint(
+                '❌ Response Status Code: ${error.response?.statusCode}',
+              );
+              debugPrint(
+                '❌ Response Data Type: ${error.response?.data.runtimeType}',
+              );
+              if (error.response?.data is String) {
+                final responseStr = error.response!.data as String;
+                debugPrint(
+                  '❌ Response Data (first 1000 chars): ${responseStr.length > 1000 ? responseStr.substring(0, 1000) : responseStr}',
+                );
+              } else {
+                debugPrint('❌ Response Data: ${error.response?.data}');
+              }
+            }
+            debugPrint('❌ Stack Trace: ${error.stackTrace}');
+          }
+          debugPrint('═══════════════════════════════════════');
+
           if (error.response?.statusCode == 401) {
             throw AuthExpiredException('Session expired');
           }
@@ -131,18 +223,45 @@ class ApiClient {
   Future<Response> login(String emailOrPhone, String password) async {
     await _ensureInitialized();
 
+    debugPrint('═══════════════════════════════════════');
+    debugPrint('🔐 LOGIN REQUEST DETAILS 🔐');
+    debugPrint('═══════════════════════════════════════');
+    debugPrint(
+      'Endpoint: ${AppConstants.baseUrl}${AppConstants.loginEndpoint}',
+    );
+    debugPrint(
+      'Full URL: ${AppConstants.baseUrl}${AppConstants.loginEndpoint}',
+    );
+    debugPrint(
+      'Email/Phone: ${emailOrPhone.replaceRange(0, emailOrPhone.length > 3 ? emailOrPhone.length - 3 : emailOrPhone.length, "*" * (emailOrPhone.length > 3 ? emailOrPhone.length - 3 : emailOrPhone.length))}',
+    );
+    debugPrint('Password Length: ${password.length}');
+
     final formData = FormData.fromMap({
       'Email_number': emailOrPhone,
       'password': password,
     });
 
-    final response = await _dio.post(
-      AppConstants.loginEndpoint,
-      data: formData,
-      options: Options(contentType: 'multipart/form-data'),
-    );
+    debugPrint('FormData Fields: ${formData.fields}');
+    debugPrint('FormData Files: ${formData.files}');
+    debugPrint('═══════════════════════════════════════');
 
-    return response;
+    try {
+      final response = await _dio.post(
+        AppConstants.loginEndpoint,
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+
+      debugPrint('✅ Login Response Status: ${response.statusCode}');
+      debugPrint('✅ Login Response Data: ${response.data}');
+
+      return response;
+    } catch (e) {
+      debugPrint('❌ Login Exception: $e');
+      debugPrint('❌ Exception Type: ${e.runtimeType}');
+      rethrow;
+    }
   }
 
   // Logout
@@ -242,18 +361,99 @@ class ApiClient {
         ? {'baby_id': babyId}
         : null;
 
-    final response = await _dio.get(
-      AppConstants.immunizationScheduleEndpoint,
-      queryParameters: queryParameters,
-    );
+    try {
+      final response = await _dio.get(
+        AppConstants.immunizationScheduleEndpoint,
+        queryParameters: queryParameters,
+      );
 
-    return response;
+      return response;
+    } on DioException catch (e) {
+      // If JSON parsing failed, try to get raw response
+      if (e.type == DioExceptionType.unknown && e.error is FormatException) {
+        debugPrint('⚠️ JSON Parse Error - Attempting to get raw response');
+
+        // Try to get raw response by making request with plain text
+        try {
+          final rawResponse = await _dio.get(
+            AppConstants.immunizationScheduleEndpoint,
+            queryParameters: queryParameters,
+            options: Options(responseType: ResponseType.plain),
+          );
+
+          debugPrint('📄 Raw Server Response (first 500 chars):');
+          debugPrint(
+            rawResponse.data.toString().substring(
+              0,
+              rawResponse.data.toString().length > 500
+                  ? 500
+                  : rawResponse.data.toString().length,
+            ),
+          );
+
+          // Try to extract JSON from response (may have PHP warnings before it)
+          try {
+            final responseStr = rawResponse.data.toString();
+
+            // Try to find JSON object in the response (handles PHP warnings before JSON)
+            final jsonMatch = RegExp(
+              r'\{.*\}',
+              dotAll: true,
+            ).firstMatch(responseStr);
+            if (jsonMatch != null) {
+              final jsonStr = jsonMatch.group(0)!;
+              debugPrint(
+                '📄 Extracted JSON from response (length: ${jsonStr.length})',
+              );
+              final jsonData = json.decode(jsonStr);
+              // Return as if it was parsed normally
+              return Response(
+                requestOptions: rawResponse.requestOptions,
+                data: jsonData,
+                statusCode: rawResponse.statusCode,
+                statusMessage: rawResponse.statusMessage,
+                headers: rawResponse.headers,
+              );
+            } else {
+              // No JSON found, try parsing entire response
+              final jsonData = json.decode(responseStr);
+              return Response(
+                requestOptions: rawResponse.requestOptions,
+                data: jsonData,
+                statusCode: rawResponse.statusCode,
+                statusMessage: rawResponse.statusMessage,
+                headers: rawResponse.headers,
+              );
+            }
+          } catch (parseError) {
+            debugPrint('❌ Failed to parse as JSON: $parseError');
+            debugPrint('📄 Full response: ${rawResponse.data}');
+            rethrow;
+          }
+        } catch (retryError) {
+          debugPrint('❌ Failed to get raw response: $retryError');
+          rethrow;
+        }
+      }
+      rethrow;
+    }
   }
 
   // Get child list with CHR status
   Future<Response> getChildList() async {
     await _ensureInitialized();
     return await _dio.get(AppConstants.childListEndpoint);
+  }
+
+  // Get user info (for QR generation - parent profile image and name)
+  Future<Response> getUserInfo(String userId) async {
+    await _ensureInitialized();
+    final formData = FormData.fromMap({'user_id': userId});
+    return await _dio.post(
+      AppConstants.getUserInfoEndpoint,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
   }
 
   // CHR Request methods
@@ -832,6 +1032,7 @@ class ApiClient {
       email: request.email,
       number: request.number,
       gender: request.gender,
+      relationship: request.relationship,
       province: request.province,
       cityMunicipality: request.cityMunicipality,
       barangay: request.barangay,
@@ -1197,6 +1398,70 @@ class ApiClient {
 
     print('Reset Password Response: ${response.data}');
     return response;
+  }
+
+  // ============================================
+  // Google Sign-In Methods
+  // ============================================
+
+  /// Google Sign-Up - For new users registering with Google
+  /// Requires Google ID token + profile information (phone, address, etc.)
+  Future<GoogleSignInResponse> googleSignUp(GoogleSignUpRequest request) async {
+    await _ensureInitialized();
+
+    debugPrint('═══════════════════════════════════════');
+    debugPrint('🔵 GOOGLE SIGN-UP REQUEST 🔵');
+    debugPrint('═══════════════════════════════════════');
+    debugPrint(
+      'Endpoint: ${AppConstants.baseUrl}${AppConstants.googleSignupEndpoint}',
+    );
+
+    final response = await _dio.post(
+      AppConstants.googleSignupEndpoint,
+      data: request.toJson(),
+      options: Options(contentType: 'application/json'),
+    );
+
+    debugPrint('Google Sign-Up Response: ${response.data}');
+
+    Map<String, dynamic> responseData;
+    if (response.data is String) {
+      responseData = json.decode(response.data);
+    } else {
+      responseData = response.data;
+    }
+
+    return GoogleSignInResponse.fromJson(responseData);
+  }
+
+  /// Google Login - For existing users signing in with Google
+  /// Only requires Google ID token
+  Future<GoogleSignInResponse> googleLogin(String credential) async {
+    await _ensureInitialized();
+
+    debugPrint('═══════════════════════════════════════');
+    debugPrint('🔵 GOOGLE LOGIN REQUEST 🔵');
+    debugPrint('═══════════════════════════════════════');
+    debugPrint(
+      'Endpoint: ${AppConstants.baseUrl}${AppConstants.googleLoginEndpoint}',
+    );
+
+    final response = await _dio.post(
+      AppConstants.googleLoginEndpoint,
+      data: {'credential': credential},
+      options: Options(contentType: 'application/json'),
+    );
+
+    debugPrint('Google Login Response: ${response.data}');
+
+    Map<String, dynamic> responseData;
+    if (response.data is String) {
+      responseData = json.decode(response.data);
+    } else {
+      responseData = response.data;
+    }
+
+    return GoogleSignInResponse.fromJson(responseData);
   }
 
   // Baby Card PDF Generation Endpoints

@@ -30,10 +30,23 @@ class ChildListItem {
   });
 
   factory ChildListItem.fromJson(Map<String, dynamic> json) {
+    // Construct name from child_fname and child_lname if name is not provided
+    String name;
+    if (json['name'] != null && json['name'].toString().trim().isNotEmpty) {
+      name = json['name'].toString().trim();
+    } else {
+      final fname = (json['child_fname'] ?? '').toString().trim();
+      final lname = (json['child_lname'] ?? '').toString().trim();
+      name = '$fname $lname'.trim();
+      if (name.isEmpty) {
+        name = 'Child'; // Fallback if both names are empty
+      }
+    }
+
     return ChildListItem(
       id: json['id']?.toString() ?? '',
       babyId: json['baby_id'] ?? '',
-      name: json['name'] ?? '',
+      name: name,
       age: json['age'] ?? 0,
       weeksOld: (json['weeks_old'] ?? 0.0).toDouble(),
       gender: json['gender'] ?? '',

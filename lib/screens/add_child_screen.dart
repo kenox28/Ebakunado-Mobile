@@ -457,7 +457,14 @@ class _AddChildScreenState extends State<AddChildScreen>
                     child: _buildRadioOption(
                       value: 'Male',
                       groupValue: _gender,
-                      onChanged: (value) => setState(() => _gender = value!),
+                      onChanged: (value) => setState(() {
+                        _gender = value!;
+                        // Clear LMP if not Female or if user is Guardian
+                        if (_gender != 'Female' ||
+                            _userProfile?.relationship == 'Guardian') {
+                          _lmp = null;
+                        }
+                      }),
                       label: 'Male 👦',
                     ),
                   ),
@@ -490,17 +497,21 @@ class _AddChildScreenState extends State<AddChildScreen>
                     ? 'Father name is required'
                     : null,
               ),
-              _buildDateField(
-                label: 'LMP (Last Menstrual Period)',
-                value: _lmp,
-                onTap: _selectLMP,
-                optionalHint: 'Select date (optional)',
-              ),
-              _buildTextFormField(
-                controller: _familyPlanningController,
-                label: 'Family Planning',
-                hint: 'Enter family planning method (optional)',
-              ),
+              // Show LMP only if user is Parents and child gender is Female
+              if (_userProfile?.relationship == 'Parents' && _gender == 'Female')
+                _buildDateField(
+                  label: 'LMP (Last Menstrual Period)',
+                  value: _lmp,
+                  onTap: _selectLMP,
+                  optionalHint: 'Select date (optional)',
+                ),
+              // Show Family Planning only if user is Parents
+              if (_userProfile?.relationship == 'Parents')
+                _buildTextFormField(
+                  controller: _familyPlanningController,
+                  label: 'Family Planning',
+                  hint: 'Enter family planning method (optional)',
+                ),
 
               const SizedBox(height: 24),
 
@@ -656,17 +667,20 @@ class _AddChildScreenState extends State<AddChildScreen>
     String? Function(String?)? validator,
     String? optionalHint,
   }) {
+    final displayText = value != null
+        ? '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}'
+        : '';
+    final controller = TextEditingController(text: displayText);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
         readOnly: true,
+        controller: controller,
         onTap: onTap,
         validator: validator,
         decoration: InputDecoration(
           labelText: label,
-          hintText: value == null
-              ? (optionalHint ?? 'Select date')
-              : '${value.day}/${value.month}/${value.year}',
+          hintText: optionalHint ?? 'Select date',
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(AppConstants.borderRadius),
           ),
@@ -806,37 +820,67 @@ class _AddChildScreenState extends State<AddChildScreen>
   }
 
   Widget _buildVaccineCheckboxes() {
+    final ordered = VaccineCatalog.options;
     return Column(
-      children: VaccineCatalog.options.map((vaccine) {
-        return CheckboxListTile(
-          title: Text(vaccine.displayLabel),
-          subtitle: vaccine.description != null
-              ? Text(vaccine.description!, style: AppConstants.captionStyle)
-              : null,
-          value: _vaccinesReceived.contains(vaccine.payloadName),
-          onChanged: (bool? value) {
-            setState(() {
-              if (value == true) {
-                _vaccinesReceived.add(vaccine.payloadName);
-              } else {
-                _vaccinesReceived.remove(vaccine.payloadName);
-              }
-            });
-          },
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: EdgeInsets.zero,
-        );
-      }).toList(),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Select vaccines in order. You can only check the next vaccine after completing the previous one.',
+            style: AppConstants.captionStyle,
+          ),
+        ),
+        ...ordered.asMap().entries.map((entry) {
+          final index = entry.key;
+          final vaccine = entry.value;
+          final previousPayload = index == 0
+              ? null
+              : ordered[index - 1].payloadName;
+          final isEnabled =
+              index == 0 || _vaccinesReceived.contains(previousPayload);
+          final isChecked = _vaccinesReceived.contains(vaccine.payloadName);
+
+          return CheckboxListTile(
+            title: Text(vaccine.displayLabel),
+            subtitle: vaccine.description != null
+                ? Text(vaccine.description!, style: AppConstants.captionStyle)
+                : null,
+            value: isChecked,
+            enabled: isEnabled,
+            onChanged: (bool? value) {
+              if (value == null) return;
+              setState(() {
+                if (value && isEnabled) {
+                  _vaccinesReceived.add(vaccine.payloadName);
+                } else if (!value) {
+                  // Uncheck this and everything after it to preserve order
+                  for (final v in ordered.skip(index)) {
+                    _vaccinesReceived.remove(v.payloadName);
+                  }
+                }
+              });
+            },
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+          );
+        }).toList(),
+      ],
     );
   }
 
   Future<void> _selectBirthDate() async {
     final now = DateTime.now();
+    final initial = _birthDate ?? now;
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: now.subtract(const Duration(days: 365)),
+      initialDate: initial,
       firstDate: DateTime(2000),
-      lastDate: DateTime(now.year + 1, 12, 31), // Allow up to end of next year
+      lastDate: DateTime(
+        now.year + 2,
+        12,
+        31,
+      ), // Allow up to end of next two years
     );
     if (picked != null && picked != _birthDate) {
       setState(() => _birthDate = picked);
@@ -925,6 +969,12 @@ class _AddChildScreenState extends State<AddChildScreen>
             } else if (gender == 'male' || gender == 'm') {
               _fatherNameController.text = fullName;
             }
+          }
+
+          // Clear LMP and Family Planning if user is Guardian
+          if (_userProfile!.relationship == 'Guardian') {
+            _lmp = null;
+            _familyPlanningController.clear();
           }
         });
       }

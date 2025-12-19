@@ -22,6 +22,7 @@ import 'screens/approved_requests_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/app_notification_settings_screen.dart';
 import 'screens/add_child_screen.dart';
+import 'screens/google_complete_profile_screen.dart';
 import 'utils/constants.dart';
 import 'services/notification_service.dart';
 
@@ -88,6 +89,10 @@ class MyApp extends StatelessWidget {
             case AppConstants.forgotPasswordResetRoute:
               return MaterialPageRoute(
                 builder: (_) => const ForgotPasswordResetScreen(),
+              );
+            case AppConstants.googleCompleteProfileRoute:
+              return MaterialPageRoute(
+                builder: (_) => const GoogleCompleteProfileScreen(),
               );
             case AppConstants.homeRoute:
               return MaterialPageRoute(builder: (_) => const HomeScreen());

@@ -83,6 +83,8 @@ class AppConstants {
       'php/supabase/users/update_profile.php';
   static const String uploadProfilePhotoEndpoint =
       'php/supabase/users/upload_profile_photo.php';
+  static const String getUserInfoEndpoint =
+      'php/supabase/bhw/get_user_info.php';
 
   static const String sendOtpEndpoint = 'php/supabase/send_otp.php';
   static const String verifyOtpEndpoint = 'php/supabase/verify_otp.php';
@@ -96,6 +98,20 @@ class AppConstants {
   static const String verifyResetOtpEndpoint =
       'php/supabase/verify_reset_otp.php';
   static const String resetPasswordEndpoint = 'php/supabase/reset_password.php';
+
+  // Google Sign-In Endpoints
+  static const String googleSignupEndpoint =
+      'php/supabase/auth/google_signup_flutter.php';
+  static const String googleLoginEndpoint =
+      'php/supabase/auth/google_login_flutter.php';
+
+  // Google Client IDs
+  // Web Client ID - Used as serverClientId for backend token verification
+  static const String googleWebClientId =
+      '1046630880770-qe83f2d3snhelqssic650fd0idemmhb1.apps.googleusercontent.com';
+
+  // Android Client ID - NOT used in code, auto-detected by Google based on SHA-1 + package name
+  // Just keeping here for reference: 1046630880770-athe3tlkqo5s7g825dal0422q7sr8gmq.apps.googleusercontent.com
 
   // Legacy Endpoints (keeping for compatibility)
   static const String getUsersEndpoint = 'get_users.php';
@@ -140,6 +156,7 @@ class AppConstants {
   static const String forgotPasswordRequestRoute = '/forgot_password_request';
   static const String forgotPasswordVerifyRoute = '/forgot_password_verify';
   static const String forgotPasswordResetRoute = '/forgot_password_reset';
+  static const String googleCompleteProfileRoute = '/google_complete_profile';
   static const String homeRoute = '/home';
   static const String requestChildRoute = '/request_child';
   static const String approvedRequestsRoute = '/approved_requests';

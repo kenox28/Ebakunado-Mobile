@@ -1,9 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import '../services/api_client.dart';
 import '../models/child_detail.dart';
 import '../models/immunization.dart';
+import '../models/chr_request.dart';
 import '../utils/constants.dart';
 import '../utils/error_handler.dart';
 import '../mixins/animated_alert_mixin.dart';
@@ -606,20 +611,129 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
         responseData = response.data;
       }
 
-      if (responseData['status'] == 'success') {
-        showSuccessAlert(
-          '${requestType == 'school' ? 'School' : 'Transfer'} certificate request submitted successfully',
-        );
+      final chrResponse = ChrDocGenerationResponse.fromJson(responseData);
+
+      if (chrResponse.isSuccess) {
+        // Document is generated immediately - download if doc_url is available
+        if (chrResponse.docUrl != null && chrResponse.docUrl!.isNotEmpty) {
+          // Show loading dialog
+          if (mounted) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                content: Row(
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        'Generating ${requestType == 'school' ? 'Baby Card' : 'Transfer'} document...',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          try {
+            // Download PDF from Cloudinary
+            final pdfBytes = await ApiClient.instance.downloadBabyCardFromUrl(
+              chrResponse.docUrl!,
+            );
+
+            // Close loading dialog
+            if (mounted) {
+              Navigator.pop(context);
+            }
+
+            // Save PDF
+            final fileName = _getChrFileName(
+              _childDetail?.name ?? 'Child',
+              requestType,
+            );
+            final filePath = await _savePdfToAppDirectory(pdfBytes, fileName);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '${requestType == 'school' ? 'Baby Card' : 'Transfer'} document generated and saved successfully!',
+                  ),
+                  backgroundColor: AppConstants.successGreen,
+                  duration: const Duration(seconds: 4),
+                  action: SnackBarAction(
+                    label: 'Open',
+                    textColor: Colors.white,
+                    onPressed: () async {
+                      try {
+                        await OpenFilex.open(filePath);
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to open file: $e'),
+                              backgroundColor: AppConstants.errorRed,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ),
+              );
+            }
+          } catch (e) {
+            // Close loading dialog if open
+            if (mounted && Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
+
+            debugPrint('PDF download error: $e');
+            showErrorAlert(
+              'Document generated but download failed: ${e.toString()}',
+            );
+          }
+        } else {
+          // Success but no doc_url (shouldn't happen, but handle gracefully)
+          showSuccessAlert(chrResponse.message);
+        }
       } else {
-        showErrorAlert(responseData['message'] ?? 'Request failed');
+        // Error response
+        final errorMessage = chrResponse.message.isNotEmpty
+            ? chrResponse.message
+            : 'Failed to generate document. Please try again.';
+        showErrorAlert(errorMessage);
       }
     } catch (e) {
-      showErrorAlert('Failed to submit request. Please try again.');
+      debugPrint('CHR request error: $e');
+      showErrorAlert('Failed to generate document. Please try again.');
     } finally {
       setState(() {
         _requestingTypes.remove(requestType);
       });
     }
+  }
+
+  String _getChrFileName(String childName, String requestType) {
+    final cleanChildName = childName
+        .replaceAll(' ', '_')
+        .replaceAll(RegExp(r'[^\w\-_]'), '');
+    final timestamp = DateTime.now().toIso8601String().split('T')[0];
+    final typeLabel = requestType == 'school' ? 'BabyCard' : 'Transfer';
+    return 'CHR_${typeLabel}_${cleanChildName}_$timestamp.pdf';
+  }
+
+  Future<String> _savePdfToAppDirectory(
+    Uint8List pdfBytes,
+    String fileName,
+  ) async {
+    // Save to app's private directory (no permissions needed)
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/$fileName');
+    await file.writeAsBytes(pdfBytes);
+    return file.path;
   }
 
   Widget _buildRequestButtons() {
@@ -631,12 +745,12 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Request Baby Card & Transfer',
+              'Generate Baby Card & Transfer',
               style: AppConstants.subheadingStyle,
             ),
             const SizedBox(height: 12),
             Text(
-              'Request official documents for ${_childDetail!.name}',
+              'Generate official documents for ${_childDetail!.name}',
               style: AppConstants.captionStyle,
             ),
             const SizedBox(height: 16),
@@ -666,8 +780,8 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                         fit: BoxFit.scaleDown,
                         child: Text(
                           _requestingTypes.contains('school')
-                              ? 'Requesting...'
-                              : 'Request Baby Card',
+                              ? 'Generating...'
+                              : 'Generate Baby Card',
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -708,8 +822,8 @@ class _ChildRecordScreenState extends State<ChildRecordScreen>
                         fit: BoxFit.scaleDown,
                         child: Text(
                           _requestingTypes.contains('transfer')
-                              ? 'Requesting...'
-                              : 'Request Transfer',
+                              ? 'Generating...'
+                              : 'Generate Transfer',
                           textAlign: TextAlign.center,
                         ),
                       ),

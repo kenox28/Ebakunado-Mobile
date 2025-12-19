@@ -119,3 +119,47 @@ class ChrDocStatusResponse {
     );
   }
 }
+
+/// Response model for CHR document generation endpoint
+/// Used when generating baby card/transfer documents immediately
+class ChrDocGenerationResponse {
+  final String status;
+  final String message;
+  final String? docUrl; // Immediate Cloudinary URL
+  final Map<String, dynamic>? data; // Request details
+  final Map<String, dynamic>? debug; // Debug information
+
+  ChrDocGenerationResponse({
+    required this.status,
+    required this.message,
+    this.docUrl,
+    this.data,
+    this.debug,
+  });
+
+  bool get isSuccess => status.toLowerCase() == 'success';
+
+  factory ChrDocGenerationResponse.fromJson(Map<String, dynamic> json) {
+    return ChrDocGenerationResponse(
+      status: json['status']?.toString() ?? 'error',
+      message: json['message']?.toString() ?? 'Unknown error',
+      docUrl: json['doc_url']?.toString(),
+      data: json['data'] is Map<String, dynamic>
+          ? json['data'] as Map<String, dynamic>
+          : null,
+      debug: json['debug'] is Map<String, dynamic>
+          ? json['debug'] as Map<String, dynamic>
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'status': status,
+      'message': message,
+      'doc_url': docUrl,
+      'data': data,
+      'debug': debug,
+    };
+  }
+}

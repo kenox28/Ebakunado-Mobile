@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../utils/vaccine_catalog.dart';
 
 class ImmunizationItem {
@@ -71,9 +72,7 @@ class ImmunizationItem {
       status: json['status'] ?? '',
       originalVaccineName: rawName,
       doseInfo: doseInfo,
-      isSuppressed:
-          normalizedName == null &&
-          VaccineCatalog.shouldIgnoreLegacyName(rawName),
+      isSuppressed: false, // Don't suppress any records - show all vaccines
       height: parseDouble(json['height']),
       weight: parseDouble(json['weight']),
       muac: json['muac']?.toString(),
@@ -104,25 +103,131 @@ class ImmunizationItem {
   }
 
   // Helper methods for filtering
-  bool get isScheduled => status == 'scheduled';
-  bool get isTaken => status == 'taken';
-  bool get isMissed => status == 'missed';
-  bool get isPending => status == 'pending';
-  bool get isCompleted => status == 'completed';
+  bool get isScheduled {
+    // If already taken or completed, it's not scheduled
+    if (isTaken || isCompleted) return false;
+    // If status is explicitly 'scheduled' or 'pending', it's scheduled
+    if (status.toLowerCase() == 'scheduled' ||
+        status.toLowerCase() == 'pending') {
+      return true;
+    }
+    // If status is 'missed', it's not scheduled (handled separately)
+    if (isMissed) return false;
+    // If we have a schedule date and no date_given, consider it scheduled
+    // (this handles cases where status might not be exactly 'scheduled')
+    if (scheduleDate.isNotEmpty && (dateGiven == null || dateGiven!.isEmpty)) {
+      return true;
+    }
+    return false;
+  }
+
+  bool get isTaken =>
+      status.toLowerCase() == 'taken' ||
+      (dateGiven != null && dateGiven!.isNotEmpty);
+  bool get isMissed => status.toLowerCase() == 'missed';
+  bool get isPending => status.toLowerCase() == 'pending';
+  bool get isCompleted => status.toLowerCase() == 'completed';
 
   // Helper to check if this is an upcoming immunization
+  // A record is "upcoming" if:
+  // 1. It hasn't been taken (no date_given)
+  // 2. It's not missed or completed
+  // 3. It has a schedule date that is today or in the future
   bool get isUpcoming {
-    if (!isScheduled) return false;
+    // Debug this specific record
+    final debugInfo =
+        'Vaccine: $vaccineName, Status: "$status", '
+        'ScheduleDate: "$scheduleDate", BatchDate: "$batchScheduleDate", '
+        'DateGiven: "$dateGiven"';
+
+    // If already taken or completed, it's not upcoming
+    if (isTaken ||
+        isCompleted ||
+        (dateGiven != null && dateGiven!.isNotEmpty)) {
+      debugPrint('❌ NOT UPCOMING (taken/completed): $debugInfo');
+      return false;
+    }
+
+    // If explicitly marked as missed, it's not upcoming (handled in missed tab)
+    if (isMissed) {
+      debugPrint('❌ NOT UPCOMING (missed): $debugInfo');
+      return false;
+    }
+
+    // Use batch_schedule_date if available (matches server logic), otherwise use schedule_date
+    final dateToCheck = batchScheduleDate?.isNotEmpty == true
+        ? batchScheduleDate!
+        : (scheduleDate.isNotEmpty ? scheduleDate : null);
+
+    // If no date available, check if status indicates it should be shown
+    if (dateToCheck == null || dateToCheck.isEmpty) {
+      // If status is 'scheduled' or 'pending', show it even without date
+      final statusLower = status.toLowerCase().trim();
+      final shouldShow = statusLower == 'scheduled' || statusLower == 'pending';
+      debugPrint(
+        shouldShow
+            ? '✅ UPCOMING (no date, but status=$statusLower): $debugInfo'
+            : '❌ NOT UPCOMING (no date, status=$statusLower): $debugInfo',
+      );
+      return shouldShow;
+    }
 
     try {
-      final scheduleDateTime = DateTime.parse(scheduleDate);
-      final today = DateTime.now();
-      return scheduleDateTime.isAfter(today) ||
-          scheduleDateTime.isAtSameMomentAs(
-            DateTime(today.year, today.month, today.day),
+      // Parse the date - handle different formats
+      DateTime scheduleDateTime;
+
+      // Try standard ISO format first
+      try {
+        scheduleDateTime = DateTime.parse(dateToCheck);
+      } catch (e) {
+        // Try parsing just the date part (YYYY-MM-DD)
+        try {
+          final dateOnly = dateToCheck.split(' ')[0].split('T')[0];
+          scheduleDateTime = DateTime.parse(dateOnly);
+        } catch (e2) {
+          // If parsing completely fails, but status is scheduled, show it
+          final statusLower = status.toLowerCase().trim();
+          final shouldShow =
+              statusLower == 'scheduled' || statusLower == 'pending';
+          debugPrint(
+            shouldShow
+                ? '✅ UPCOMING (date parse failed, but status=$statusLower): $debugInfo'
+                : '❌ NOT UPCOMING (date parse failed, status=$statusLower): $debugInfo',
           );
+          return shouldShow;
+        }
+      }
+
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+      final scheduleStart = DateTime(
+        scheduleDateTime.year,
+        scheduleDateTime.month,
+        scheduleDateTime.day,
+      );
+
+      // Upcoming if date is today or in the future
+      final isFutureOrToday =
+          scheduleStart.isAfter(todayStart) ||
+          scheduleStart.isAtSameMomentAs(todayStart);
+
+      debugPrint(
+        isFutureOrToday
+            ? '✅ UPCOMING (date check passed): $debugInfo -> Date: $dateToCheck'
+            : '❌ NOT UPCOMING (date in past): $debugInfo -> Date: $dateToCheck',
+      );
+
+      return isFutureOrToday;
     } catch (e) {
-      return false;
+      // If date parsing fails, check status as fallback
+      final statusLower = status.toLowerCase().trim();
+      final shouldShow = statusLower == 'scheduled' || statusLower == 'pending';
+      debugPrint(
+        shouldShow
+            ? '✅ UPCOMING (exception, but status=$statusLower): $debugInfo -> Error: $e'
+            : '❌ NOT UPCOMING (exception, status=$statusLower): $debugInfo -> Error: $e',
+      );
+      return shouldShow;
     }
   }
 
@@ -151,14 +256,58 @@ class ImmunizationScheduleResponse {
   ImmunizationScheduleResponse({required this.status, required this.data});
 
   factory ImmunizationScheduleResponse.fromJson(Map<String, dynamic> json) {
+    // Debug: Log entire JSON structure first
+    debugPrint('=== Raw Response Data ===');
+    debugPrint('Full JSON keys: ${json.keys.toList()}');
+    debugPrint('Status: ${json['status']}');
+    debugPrint('Message: ${json['message']}');
+    debugPrint('Count: ${json['count']}');
+    debugPrint('Baby IDs Checked: ${json['baby_ids_checked']}');
+
+    final rawData = json['data'] as List<dynamic>?;
+    debugPrint('Data field type: ${rawData.runtimeType}');
+    debugPrint('Total records in response: ${rawData?.length ?? 0}');
+    if (rawData != null && rawData.isNotEmpty) {
+      debugPrint('Sample record: ${rawData[0]}');
+    } else if (rawData == null) {
+      debugPrint('⚠️ WARNING: data field is NULL');
+    } else {
+      debugPrint('⚠️ WARNING: data field is an empty array');
+    }
+
+    final items =
+        rawData
+            ?.map((item) {
+              try {
+                return ImmunizationItem.fromJson(item);
+              } catch (e) {
+                debugPrint('Error parsing immunization item: $e');
+                debugPrint('Item data: $item');
+                return null;
+              }
+            })
+            .whereType<ImmunizationItem>()
+            .toList() ??
+        [];
+
+    // Debug: Log after parsing
+    debugPrint('Records after parsing: ${items.length}');
+    final displayed = items.where((item) => item.shouldDisplay).toList();
+    debugPrint('Records after shouldDisplay filter: ${displayed.length}');
+    final suppressed = items.where((item) => !item.shouldDisplay).toList();
+    if (suppressed.isNotEmpty) {
+      debugPrint('Suppressed records: ${suppressed.length}');
+      for (var item in suppressed) {
+        debugPrint(
+          '  - Suppressed: ${item.originalVaccineName} (normalized: ${item.vaccineName}, isSuppressed: ${item.isSuppressed})',
+        );
+      }
+    }
+    debugPrint('========================');
+
     return ImmunizationScheduleResponse(
       status: json['status'] ?? '',
-      data:
-          (json['data'] as List<dynamic>?)
-              ?.map((item) => ImmunizationItem.fromJson(item))
-              .where((item) => item.shouldDisplay)
-              .toList() ??
-          [],
+      data: displayed,
     );
   }
 

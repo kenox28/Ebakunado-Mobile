@@ -5,6 +5,7 @@ class UserProfile {
   final String email;
   final String? phoneNumber;
   final String? gender;
+  final String? relationship; // 'Parents' or 'Guardian'
   final String? place;
   final String? philhealthNo;
   final String? nhts;
@@ -20,6 +21,7 @@ class UserProfile {
     required this.email,
     this.phoneNumber,
     this.gender,
+    this.relationship,
     this.place,
     this.philhealthNo,
     this.nhts,
@@ -37,6 +39,7 @@ class UserProfile {
       email: json['email'] ?? '',
       phoneNumber: json['phone_number'],
       gender: json['gender'],
+      relationship: json['relationship'],
       place: json['place'],
       philhealthNo: json['philhealth_no'],
       nhts: json['nhts'],
@@ -55,6 +58,7 @@ class UserProfile {
       'email': email,
       'phone_number': phoneNumber,
       'gender': gender,
+      'relationship': relationship,
       'place': place,
       'philhealth_no': philhealthNo,
       'nhts': nhts,

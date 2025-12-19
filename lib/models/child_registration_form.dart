@@ -99,6 +99,8 @@ class ChildRegistrationResult {
   final int vaccinesTransferred;
   final int vaccinesScheduled;
   final int totalRecordsCreated;
+  final String? qrUploadStatus; // 'success', 'failed', or 'skipped'
+  final String? qrUploadError; // Error message if QR upload failed
 
   const ChildRegistrationResult({
     required this.status,
@@ -110,9 +112,14 @@ class ChildRegistrationResult {
     this.vaccinesTransferred = 0,
     this.vaccinesScheduled = 0,
     this.totalRecordsCreated = 0,
+    this.qrUploadStatus,
+    this.qrUploadError,
   });
 
   bool get isSuccess => status.toLowerCase() == 'success';
+  bool get qrUploadSuccessful => qrUploadStatus == 'success';
+  bool get qrUploadFailed => qrUploadStatus == 'failed';
+  bool get qrUploadSkipped => qrUploadStatus == 'skipped';
 
   factory ChildRegistrationResult.fromJson(Map<String, dynamic> json) {
     int _parseInt(dynamic value) {
@@ -133,6 +140,8 @@ class ChildRegistrationResult {
       vaccinesTransferred: _parseInt(json['vaccines_transferred']),
       vaccinesScheduled: _parseInt(json['vaccines_scheduled']),
       totalRecordsCreated: _parseInt(json['total_records_created']),
+      qrUploadStatus: json['qr_upload_status']?.toString(),
+      qrUploadError: json['qr_upload_error']?.toString(),
     );
   }
 }

@@ -4,6 +4,7 @@ class CreateAccountRequest {
   final String email;
   final String number; // Changed from phoneNumber to number
   final String gender;
+  final String relationship; // "Mother", "Father", or "Guardian"
   final String province;
   final String cityMunicipality;
   final String barangay;
@@ -21,6 +22,7 @@ class CreateAccountRequest {
     required this.email,
     required this.number,
     required this.gender,
+    required this.relationship,
     required this.province,
     required this.cityMunicipality,
     required this.barangay,
@@ -40,6 +42,7 @@ class CreateAccountRequest {
       'email': email,
       'number': number, // Changed from phone_number to number
       'gender': gender,
+      'relationship': relationship,
       'province': province,
       'city_municipality': cityMunicipality,
       'barangay': barangay,
@@ -60,6 +63,7 @@ class CreateAccountRequest {
       email: json['email'] ?? '',
       number: json['number'] ?? '',
       gender: json['gender'] ?? '',
+      relationship: json['relationship'] ?? '',
       province: json['province'] ?? '',
       cityMunicipality: json['city_municipality'] ?? '',
       barangay: json['barangay'] ?? '',

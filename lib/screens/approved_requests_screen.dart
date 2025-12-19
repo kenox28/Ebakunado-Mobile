@@ -544,7 +544,7 @@ class _ApprovedRequestsScreenState extends State<ApprovedRequestsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Approved Requests'),
+        title: const Text('Baby Cards'),
         backgroundColor: AppConstants.primaryGreen,
         foregroundColor: Colors.white,
       ),
@@ -728,10 +728,10 @@ class _ApprovedRequestsScreenState extends State<ApprovedRequestsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Approved At', style: AppConstants.captionStyle),
+                          Text('Generated At', style: AppConstants.captionStyle),
                           const SizedBox(height: 2),
                           Text(
-                            request.formattedApprovedAt,
+                            request.formattedGeneratedAt,
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,

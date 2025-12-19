@@ -5,7 +5,7 @@ class ChrRequest {
   final String requestType; // 'transfer' or 'school'
   final String status; // 'approved'
   final String docUrl; // Cloudinary URL
-  final DateTime approvedAt;
+  final DateTime generatedAt;
   final DateTime createdAt;
 
   ChrRequest({
@@ -15,7 +15,7 @@ class ChrRequest {
     required this.requestType,
     required this.status,
     required this.docUrl,
-    required this.approvedAt,
+    required this.generatedAt,
     required this.createdAt,
   });
 
@@ -27,8 +27,8 @@ class ChrRequest {
       requestType: json['request_type'] ?? '',
       status: json['status'] ?? '',
       docUrl: json['doc_url'] ?? '',
-      approvedAt:
-          DateTime.tryParse(json['approved_at'] ?? '') ?? DateTime.now(),
+      generatedAt:
+          DateTime.tryParse(json['approved_at'] ?? json['generated_at'] ?? '') ?? DateTime.now(),
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
     );
   }
@@ -41,7 +41,8 @@ class ChrRequest {
       'request_type': requestType,
       'status': status,
       'doc_url': docUrl,
-      'approved_at': approvedAt.toIso8601String(),
+      'approved_at': generatedAt.toIso8601String(),
+      'generated_at': generatedAt.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -60,9 +61,13 @@ class ChrRequest {
     }
   }
 
-  String get formattedApprovedAt {
-    return '${_getMonthName(approvedAt.month)} ${approvedAt.day.toString().padLeft(2, '0')}, ${approvedAt.year} ${approvedAt.hour.toString().padLeft(2, '0')}:${approvedAt.minute.toString().padLeft(2, '0')}';
+  String get formattedGeneratedAt {
+    return '${_getMonthName(generatedAt.month)} ${generatedAt.day.toString().padLeft(2, '0')}, ${generatedAt.year} ${generatedAt.hour.toString().padLeft(2, '0')}:${generatedAt.minute.toString().padLeft(2, '0')}';
   }
+  
+  // Keep for backward compatibility
+  @Deprecated('Use formattedGeneratedAt instead')
+  String get formattedApprovedAt => formattedGeneratedAt;
 
   String _getMonthName(int month) {
     const months = [
@@ -88,7 +93,7 @@ class ChrRequest {
         .replaceAll(' ', '_')
         .replaceAll(RegExp(r'[^\w\-_]'), '');
     final timestamp =
-        '${approvedAt.year}${approvedAt.month.toString().padLeft(2, '0')}${approvedAt.day.toString().padLeft(2, '0')}_${approvedAt.hour.toString().padLeft(2, '0')}${approvedAt.minute.toString().padLeft(2, '0')}';
+        '${generatedAt.year}${generatedAt.month.toString().padLeft(2, '0')}${generatedAt.day.toString().padLeft(2, '0')}_${generatedAt.hour.toString().padLeft(2, '0')}${generatedAt.minute.toString().padLeft(2, '0')}';
 
     if (cleanChildName.isNotEmpty) {
       return 'CHR_${requestType}_${cleanChildName}_$timestamp.pdf';

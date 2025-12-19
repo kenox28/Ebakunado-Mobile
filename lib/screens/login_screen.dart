@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
   final _passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
 
   @override
   void dispose() {
@@ -54,7 +55,9 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
           await profileProvider.loadProfileData();
 
           if (profileProvider.profile == null) {
-            debugPrint('LoginScreen: profile null after load, retrying once...');
+            debugPrint(
+              'LoginScreen: profile null after load, retrying once...',
+            );
             await profileProvider.loadProfileData();
           }
 
@@ -128,6 +131,60 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
     );
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isGoogleLoading = true);
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final profileProvider = Provider.of<UserProfileProvider>(
+        context,
+        listen: false,
+      );
+
+      final response = await authProvider.googleLogin(showGlobalLoading: false);
+
+      if (!mounted) return;
+
+      if (response.isAuthenticated) {
+        // User logged in successfully
+        authProvider.setGlobalLoading(true);
+        try {
+          await profileProvider.loadProfileData();
+          if (profileProvider.profile == null) {
+            await profileProvider.loadProfileData();
+          }
+          await NotificationService.scheduleDailyNotificationCheck();
+          if (mounted) {
+            await _checkBatteryOptimizationAfterLogin();
+            Navigator.pushReplacementNamed(context, AppConstants.homeRoute);
+          }
+        } finally {
+          authProvider.setGlobalLoading(false);
+        }
+      } else if (response.status == 'not_found') {
+        // User doesn't exist - they need to sign up
+        showErrorAlert(
+          'No account found with this Google account. Please sign up first.',
+        );
+      } else {
+        // Error
+        showErrorAlert(response.message);
+      }
+    } catch (e) {
+      debugPrint('Google Sign-In error: $e');
+      if (mounted) {
+        final errorMessage = e.toString().replaceFirst('Exception: ', '');
+        if (!errorMessage.contains('cancelled')) {
+          showErrorAlert(errorMessage);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGoogleLoading = false);
+      }
+    }
+  }
+
   Future<void> _checkBatteryOptimizationAfterLogin() async {
     if (!Platform.isAndroid) {
       return; // Only for Android
@@ -135,7 +192,8 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final batteryCheckShown = prefs.getBool('battery_optimization_check_shown') ?? false;
+      final batteryCheckShown =
+          prefs.getBool('battery_optimization_check_shown') ?? false;
 
       // Only show once after login
       if (batteryCheckShown) {
@@ -143,7 +201,8 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
       }
 
       // Check if battery optimization is disabled
-      final isBatteryOptimized = await NotificationService.isBatteryOptimizationDisabled();
+      final isBatteryOptimized =
+          await NotificationService.isBatteryOptimizationDisabled();
 
       if (!isBatteryOptimized && mounted) {
         // Show dialog explaining battery optimization
@@ -155,9 +214,7 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
               children: [
                 Icon(Icons.battery_alert, color: AppConstants.primaryGreen),
                 const SizedBox(width: 12),
-                const Expanded(
-                  child: Text('Battery Optimization'),
-                ),
+                const Expanded(child: Text('Battery Optimization')),
               ],
             ),
             content: const Text(
@@ -290,7 +347,9 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
                   SizedBox(
                     height: 50,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _handleLogin,
+                      onPressed: _isLoading || _isGoogleLoading
+                          ? null
+                          : _handleLogin,
                       child: _isLoading
                           ? const SizedBox(
                               height: 20,
@@ -312,6 +371,75 @@ class _LoginScreenState extends State<LoginScreen> with AnimatedAlertMixin {
                     ),
                   ),
                   const SizedBox(height: 24),
+
+                  // OR Divider
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.grey[400])),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'OR',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Colors.grey[400])),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Google Sign-In Button
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: _isLoading || _isGoogleLoading
+                          ? null
+                          : _handleGoogleSignIn,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.grey[400]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppConstants.borderRadius,
+                          ),
+                        ),
+                      ),
+                      child: _isGoogleLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.network(
+                                  'https://www.google.com/favicon.ico',
+                                  width: 20,
+                                  height: 20,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.g_mobiledata,
+                                    size: 24,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'Sign in with Google',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
                   TextButton(
                     onPressed: () {
                       Navigator.pushNamed(

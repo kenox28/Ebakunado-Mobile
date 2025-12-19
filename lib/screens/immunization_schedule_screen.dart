@@ -25,6 +25,7 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
   bool _isLoading = true;
   String? _error;
   String? _childName;
+  bool _hasNoRecordsAtAll = false;
 
   @override
   void initState() {
@@ -51,6 +52,32 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
         babyId: widget.babyId,
       );
 
+      // Debug: Log raw response BEFORE parsing
+      debugPrint('=== RAW HTTP RESPONSE ===');
+      debugPrint('Status Code: ${response.statusCode}');
+      debugPrint('Status Message: ${response.statusMessage}');
+      debugPrint('Response Type: ${response.data.runtimeType}');
+      debugPrint('Response Data (raw): ${response.data}');
+      if (response.data is Map) {
+        debugPrint('Response Keys: ${(response.data as Map).keys.toList()}');
+        if ((response.data as Map).containsKey('data')) {
+          debugPrint(
+            'Data field type: ${(response.data as Map)['data'].runtimeType}',
+          );
+          debugPrint('Data field value: ${(response.data as Map)['data']}');
+        }
+        if ((response.data as Map).containsKey('status')) {
+          debugPrint('Status field: ${(response.data as Map)['status']}');
+        }
+        if ((response.data as Map).containsKey('message')) {
+          debugPrint('Message field: ${(response.data as Map)['message']}');
+        }
+        if ((response.data as Map).containsKey('count')) {
+          debugPrint('Count field: ${(response.data as Map)['count']}');
+        }
+      }
+      debugPrint('========================');
+
       // Handle JSON string response
       Map<String, dynamic> responseData;
       if (response.data is String) {
@@ -70,8 +97,35 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
           _childName = childData.first.childName;
         }
 
+        // Check if this is a "no records at all" situation
+        final totalRecords = scheduleResponse.data.length;
+        final hasAnyRecords = totalRecords > 0;
+
+        // Debug: Log all records for this baby
+        debugPrint('=== Immunization Schedule Debug ===');
+        debugPrint(
+          'Total records for baby ${widget.babyId}: ${childData.length}',
+        );
+        debugPrint('Total records in response: $totalRecords');
+        debugPrint('Has any records: $hasAnyRecords');
+        for (var item in childData) {
+          debugPrint(
+            'Vaccine: ${item.vaccineName}, Status: ${item.status}, '
+            'ScheduleDate: ${item.scheduleDate}, '
+            'BatchDate: ${item.batchScheduleDate}, '
+            'DateGiven: ${item.dateGiven}, '
+            'isScheduled: ${item.isScheduled}, '
+            'isUpcoming: ${item.isUpcoming}',
+          );
+        }
+        debugPrint(
+          'Upcoming count: ${scheduleResponse.getUpcomingForBaby(widget.babyId).length}',
+        );
+        debugPrint('===================================');
+
         setState(() {
           _scheduleResponse = scheduleResponse;
+          _hasNoRecordsAtAll = !hasAnyRecords;
           _isLoading = false;
         });
       } else {
@@ -88,6 +142,15 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
             AuthExpiredException('Session expired'),
           );
         }
+      } else if (e.type == DioExceptionType.unknown &&
+          e.error is FormatException) {
+        // Server returned invalid JSON (probably HTML error page or PHP error)
+        debugPrint('⚠️ Server returned invalid JSON response');
+        setState(() {
+          _error =
+              'Server returned an invalid response. This may be a server error. Please try again later or contact support.';
+          _isLoading = false;
+        });
       } else {
         setState(() {
           _error = 'Network error. Please try again.';
@@ -100,6 +163,7 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
           ErrorHandler.handleError(context, e);
         }
       } else {
+        debugPrint('❌ Unexpected error in _loadSchedule: $e');
         setState(() {
           _error = 'Failed to load schedule. Please try again.';
           _isLoading = false;
@@ -203,11 +267,21 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
     final upcomingItems = _scheduleResponse!.getUpcomingForBaby(widget.babyId);
 
     if (upcomingItems.isEmpty) {
-      return _buildEmptyState(
-        'No scheduled immunizations',
-        'All scheduled immunizations are up to date.',
-        Icons.check_circle_outline,
-      );
+      // Show different message if no records exist at all vs. all are completed
+      if (_hasNoRecordsAtAll) {
+        return _buildEmptyState(
+          'No immunization schedule found',
+          'Immunization records have not been created for this child yet. Please contact your healthcare provider or wait for the schedule to be generated.',
+          Icons.info_outline,
+          showAction: true,
+        );
+      } else {
+        return _buildEmptyState(
+          'No scheduled immunizations',
+          'All scheduled immunizations are up to date.',
+          Icons.check_circle_outline,
+        );
+      }
     }
 
     return ListView.builder(
@@ -436,7 +510,12 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
     );
   }
 
-  Widget _buildEmptyState(String title, String subtitle, IconData icon) {
+  Widget _buildEmptyState(
+    String title,
+    String subtitle,
+    IconData icon, {
+    bool showAction = false,
+  }) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -460,6 +539,18 @@ class _ImmunizationScheduleScreenState extends State<ImmunizationScheduleScreen>
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
+            if (showAction) ...[
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _loadSchedule,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppConstants.primaryGreen,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ],
         ),
       ),

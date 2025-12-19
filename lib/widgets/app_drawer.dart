@@ -112,7 +112,7 @@ class AppDrawer extends StatelessWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.assignment_turned_in),
-                  title: const Text('Approved Requests'),
+                  title: const Text('Baby Cards'),
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.pushNamed(
@@ -202,9 +202,9 @@ class AppDrawer extends StatelessWidget {
                         // Remove ALL routes and navigate to login
                         // This clears the entire navigation stack
                         rootNav.pushNamedAndRemoveUntil(
-                        AppConstants.loginRoute,
+                          AppConstants.loginRoute,
                           (route) => false, // Remove all routes
-                      );
+                        );
                       } catch (e) {
                         debugPrint('Logout navigation error: $e');
                         // Fallback: pop all routes to root
